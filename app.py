@@ -4,7 +4,8 @@ import plotly.graph_objects as go
 import json
 import numpy as np
 from modules.data_loader import (load_excel, get_player_list,
-                                  get_metric_columns, create_sample_excel)
+                                  get_metric_columns, create_sample_excel,
+                                  clean_dataframe)
 from modules.analysis import (calc_team_stats, get_player_data,
                                normalize_for_radar)
 from modules.advisor import generate_advice
@@ -42,7 +43,6 @@ st.markdown("""
     border-color: #4da3ff;
 }
 hr { border-color: #1e2d4a; }
-
 .param-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
@@ -73,7 +73,7 @@ hr { border-color: #1e2d4a; }
 .param-value.high { color: #4da3ff; }
 .param-value.mid  { color: #e0e6f0; }
 .param-value.low  { color: #5a7a9a; }
-
+.param-value.none { color: #3a4a5a; }
 .rank-badge {
     display: inline-block;
     font-family: 'Rajdhani', sans-serif;
@@ -88,7 +88,7 @@ hr { border-color: #1e2d4a; }
 .rank-B { color: #a0c4e8; border-color: #a0c4e8; }
 .rank-C { color: #7a9cc0; border-color: #7a9cc0; }
 .rank-D { color: #5a7a9a; border-color: #5a7a9a; }
-
+.rank-N { color: #3a4a5a; border-color: #3a4a5a; }
 .section-header {
     font-family: 'Rajdhani', sans-serif;
     font-size: 13px;
@@ -134,6 +134,15 @@ hr { border-color: #1e2d4a; }
     font-family: 'Rajdhani', sans-serif;
     color: #ffffff;
 }
+.null-warning {
+    background: #1a1a2e;
+    border-left: 3px solid #1a6fc4;
+    padding: 8px 14px;
+    font-family: 'Noto Sans JP', sans-serif;
+    font-size: 12px;
+    color: #7a9cc0;
+    margin-bottom: 12px;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -150,7 +159,7 @@ with st.sidebar:
     uploaded_file = st.file_uploader("UPLOAD EXCEL FILE", type=["xlsx"])
     name_col = st.text_input("選手名の列名", value="選手名")
 
-# ── タイトル画面（未アップロード時）───────────────
+# ── タイトル画面 ────────────────────────────────────
 if uploaded_file is None:
     st.markdown("""
     <div style="padding: 60px 0 40px;">
@@ -193,13 +202,27 @@ if uploaded_file is None:
     """, unsafe_allow_html=True)
     st.stop()
 
-# ── データ読み込み ──────────────────────────────────
-df = load_excel(uploaded_file)
+# ── データ読み込み・クリーニング ────────────────────
+df              = load_excel(uploaded_file)
 all_metric_cols = get_metric_columns(df)
 
 if name_col not in df.columns:
-    st.error(f"列「{name_col}」が見つかりません。サイドバーで列名を確認してください。")
+    st.error(f"列「{name_col}」が見つかりません。")
     st.stop()
+
+df, outlier_report = clean_dataframe(df, all_metric_cols)
+
+# 外れ値レポート表示
+if outlier_report:
+    warn_lines = "".join(
+        f"<div>・ {col}：{', '.join(players)}</div>"
+        for col, players in outlier_report.items()
+    )
+    st.markdown(f"""
+    <div class="null-warning">
+        <strong>OUTLIER DETECTED</strong> — 以下の値は外れ値（±3σ）として除外しました<br>
+        {warn_lines}
+    </div>""", unsafe_allow_html=True)
 
 # ── 分析設定 ────────────────────────────────────────
 st.markdown('<div class="section-header">ANALYSIS SETUP</div>',
@@ -207,7 +230,7 @@ st.markdown('<div class="section-header">ANALYSIS SETUP</div>',
 
 col_s, col_m = st.columns([1, 2])
 with col_s:
-    player_list    = get_player_list(df, name_col)
+    player_list     = get_player_list(df, name_col)
     selected_player = st.selectbox("SELECT PLAYER", player_list)
 with col_m:
     selected_metrics = st.multiselect(
@@ -225,15 +248,17 @@ team_stats   = calc_team_stats(df, selected_metrics)
 player_data  = get_player_data(df, selected_player, name_col)
 advice_list  = generate_advice(player_data, team_stats, selected_metrics)
 
-# ── ランク変換ヘルパー ──────────────────────────────
-def z_to_rank(z: float) -> str:
+# ── ランク変換 ──────────────────────────────────────
+def z_to_rank(z) -> str:
+    if z is None: return "N"
     if z >= 1.5:  return "S"
     if z >= 0.5:  return "A"
     if z >= -0.5: return "B"
     if z >= -1.5: return "C"
     return "D"
 
-def z_to_class(z: float) -> str:
+def z_to_class(z) -> str:
+    if z is None: return "none"
     if z >= 0.5:  return "high"
     if z >= -0.5: return "mid"
     return "low"
@@ -251,24 +276,27 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# ── パラメーターグリッド（ブルーロック風）──────────
+# ── パラメーターグリッド ────────────────────────────
 st.markdown('<div class="section-header">SKILL PARAMETER SUMMARY</div>',
             unsafe_allow_html=True)
 
 cells_html = ""
 for item in advice_list:
-    col_name = item["指標"]
-    val      = item["選手値"]
-    mean     = item["チーム平均"]
-    std_val  = float(team_stats.loc[col_name, "標準偏差"])
-    z        = (float(val) - float(mean)) / std_val if std_val > 0 else 0.0
-    rank     = z_to_rank(z)
-    cls      = z_to_class(z)
+    col_name    = item["指標"]
+    val         = item["選手値"]
+    std_val     = float(team_stats.loc[col_name, "標準偏差"])
+    mean_val    = float(team_stats.loc[col_name, "チーム平均"])
+    is_null     = val == "-"
+    z           = None if is_null else (float(val) - mean_val) / std_val if std_val > 0 else 0.0
+    rank        = z_to_rank(z)
+    cls         = z_to_class(z)
+    val_display = "-" if is_null else val
+
     cells_html += f"""
     <div class="param-cell">
         <span class="param-label">{col_name}</span>
         <div style="display:flex;align-items:center;gap:8px;">
-            <span class="param-value {cls}">{val}</span>
+            <span class="param-value {cls}">{val_display}</span>
             <span class="rank-badge rank-{rank}">{rank}</span>
         </div>
     </div>"""
@@ -317,10 +345,8 @@ fig.update_layout(
     paper_bgcolor="#0a0e1a",
     plot_bgcolor="#0a0e1a",
     font=dict(color="#e0e6f0", family="Rajdhani"),
-    legend=dict(
-        bgcolor="#0d1626", bordercolor="#1e2d4a",
-        borderwidth=1, font=dict(size=11)
-    ),
+    legend=dict(bgcolor="#0d1626", bordercolor="#1e2d4a",
+                borderwidth=1, font=dict(size=11)),
     height=460,
     margin=dict(t=30, b=30)
 )
@@ -332,11 +358,12 @@ st.markdown('<div class="section-header">ANALYSIS REPORT</div>',
 
 for item in advice_list:
     col_name = item["指標"]
+    val      = item["選手値"]
+    is_null  = val == "-"
     std_val  = float(team_stats.loc[col_name, "標準偏差"])
-    z        = ((float(item["選手値"]) - float(item["チーム平均"])) / std_val
-                if std_val > 0 else 0.0)
+    mean_val = float(team_stats.loc[col_name, "チーム平均"])
+    z        = None if is_null else (float(val) - mean_val) / std_val if std_val > 0 else 0.0
     rank     = z_to_rank(z)
-    comment  = item["コメント"]
 
     r1, r2, r3 = st.columns([2, 1, 4])
     with r1:
@@ -354,7 +381,7 @@ for item in advice_list:
         st.markdown(f"""
         <div style="font-family:'Noto Sans JP',sans-serif;
                     font-size:12px; color:#5a7a9a; padding:6px 0;">
-            {comment}
+            {item["コメント"]}
         </div>""", unsafe_allow_html=True)
 
 # ── エクスポート ────────────────────────────────────
@@ -362,7 +389,6 @@ st.markdown('<div class="section-header">EXPORT</div>',
             unsafe_allow_html=True)
 
 class NumpyEncoder(json.JSONEncoder):
-    """numpy/pandas型をJSON変換可能な標準型に変換するエンコーダー"""
     def default(self, obj):
         if isinstance(obj, np.integer):  return int(obj)
         if isinstance(obj, np.floating): return float(obj)
@@ -370,14 +396,17 @@ class NumpyEncoder(json.JSONEncoder):
         return super().default(obj)
 
 export_data = {
-    "player":   selected_player,
-    "metrics":  selected_metrics,
-    "values":   {col: float(player_data[col]) for col in selected_metrics},
+    "player":  selected_player,
+    "metrics": selected_metrics,
+    "values": {
+        col: "-" if pd.isna(player_data[col])
+             else float(player_data[col])
+        for col in selected_metrics
+    },
     "team_stats": {
-        col: {
-            "mean": float(team_stats.loc[col, "チーム平均"]),
-            "std":  float(team_stats.loc[col, "標準偏差"])
-        } for col in selected_metrics
+        col: {"mean": float(team_stats.loc[col, "チーム平均"]),
+              "std":  float(team_stats.loc[col, "標準偏差"])}
+        for col in selected_metrics
     },
     "advice": advice_list
 }
