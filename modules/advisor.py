@@ -1,14 +1,14 @@
 import pandas as pd
 
-LOW_IS_BETTER_KEYWORDS = ["走(秒)", "タイム", "秒"]
+LOW_IS_BETTER_KEYWORDS = ["走(秒)", "タイム", "秒", "run_", "_s"]
 
 
 def _is_low_better(col_name: str) -> bool:
-    return any(kw in col_name for kw in LOW_IS_BETTER_KEYWORDS)
+    return any(kw.lower() in col_name.lower()
+               for kw in LOW_IS_BETTER_KEYWORDS)
 
 
-def _calc_z(player_val, mean: float, std: float,
-            col_name: str):
+def _calc_z(player_val, mean: float, std: float, col_name: str):
     if pd.isna(player_val) or std <= 0:
         return None
     z = (float(player_val) - float(mean)) / float(std)

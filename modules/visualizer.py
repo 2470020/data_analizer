@@ -45,29 +45,3 @@ def draw_radar_chart(metric_cols: list, player_vals: list,
         margin=dict(t=30, b=30)
     )
     return fig
-
-
-def draw_bar_comparison(player_data: pd.Series,
-                        team_stats: pd.DataFrame,
-                        metric_cols: list,
-                        player_name: str) -> go.Figure:
-    fig = go.Figure()
-    fig.add_trace(go.Bar(
-        name="TEAM AVG", x=metric_cols,
-        y=team_stats.loc[metric_cols, "チーム平均"].values,
-        marker_color="royalblue", opacity=0.7
-    ))
-    fig.add_trace(go.Bar(
-        name=player_name, x=metric_cols,
-        y=[player_data[col] for col in metric_cols],
-        marker_color="tomato", opacity=0.85
-    ))
-    fig.update_layout(
-        barmode="group",
-        paper_bgcolor="#0a0e1a",
-        plot_bgcolor="#0a0e1a",
-        font=dict(color="#e0e6f0"),
-        height=400,
-        xaxis_tickangle=-30
-    )
-    return fig

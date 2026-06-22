@@ -3,7 +3,8 @@ import pandas as pd
 import plotly.graph_objects as go
 import json
 import numpy as np
-from modules.data_loader import (load_excel, get_player_list,
+from modules.data_loader import (load_excel, get_column_names,
+                                  guess_name_column, get_player_list,
                                   get_metric_columns, create_sample_excel,
                                   clean_dataframe)
 from modules.analysis import (calc_team_stats, get_player_data,
@@ -171,9 +172,27 @@ with st.sidebar:
         type=["xlsx", "csv"],
         accept_multiple_files=True
     )
-    name_col = st.text_input("選手名の列名", value="選手名")
+
+    # ── 列名候補をファイルから動的生成 ────────────
+    name_col = "選手名"
 
     if uploaded_files:
+        try:
+            all_columns = get_column_names(uploaded_files[0])
+            default_col = guess_name_column(all_columns)
+            default_idx = all_columns.index(default_col)
+
+            st.markdown(
+                '<div class="section-header">PLAYER ID COLUMN</div>',
+                unsafe_allow_html=True)
+            name_col = st.selectbox(
+                "選手を識別する列を選択",
+                options=all_columns,
+                index=default_idx
+            )
+        except Exception:
+            name_col = st.text_input("選手名の列名", value="選手名")
+
         st.markdown('<div class="section-header">LOADED FILES</div>',
                     unsafe_allow_html=True)
         for i, f in enumerate(uploaded_files):
@@ -186,6 +205,8 @@ with st.sidebar:
                 　{f.name}<br>
                 <span style="font-size:10px; color:#3a5a7a;">{size_kb} KB</span>
             </div>""", unsafe_allow_html=True)
+    else:
+        name_col = st.text_input("選手名の列名", value="選手名")
 
 # ── タイトル画面 ────────────────────────────────────
 if not uploaded_files:
@@ -260,37 +281,36 @@ if not dfs:
 
 df = pd.concat(dfs, ignore_index=True)
 
-# 読み込みサマリー
 st.markdown(f"""
 <div class="progress-info">
     FILES LOADED : {total} &nbsp;|&nbsp; TOTAL PLAYERS : {len(df)}
 </div>
 """, unsafe_allow_html=True)
 
-all_metric_cols = get_metric_columns(df)
+all_metric_cols = get_metric_columns(df, name_col)
 
 if name_col not in df.columns:
-    st.error(f"列「{name_col}」が見つかりません。")
+    st.error(f"列「{name_col}」が見つかりません。サイドバーで列を確認してください。")
     st.stop()
 
 # 重複チェック
 duplicates = df[df.duplicated(subset=[name_col], keep=False)][name_col].unique()
 if len(duplicates) > 0:
-    dup_names = ", ".join(duplicates)
+    dup_names = ", ".join([str(d) for d in duplicates])
     st.markdown(f"""
     <div class="null-warning">
         <strong>DUPLICATE DETECTED</strong> —
-        同じ選手名が複数存在します：{dup_names}<br>
+        同じIDが複数存在します：{dup_names}<br>
         <span style="font-size:11px;">最初のデータを優先します。</span>
     </div>""", unsafe_allow_html=True)
     df = df.drop_duplicates(subset=[name_col], keep="first")
 
 # クリーニング
-df, outlier_report = clean_dataframe(df, all_metric_cols)
+df, outlier_report = clean_dataframe(df, all_metric_cols, name_col=name_col)
 
 if outlier_report:
     warn_lines = "".join(
-        f"<div>・ {col}：{', '.join(players)}</div>"
+        f"<div>・ {col}：{', '.join([str(p) for p in players])}</div>"
         for col, players in outlier_report.items()
     )
     st.markdown(f"""
@@ -346,7 +366,7 @@ st.markdown(f"""
                 color:#4da3ff; letter-spacing:0.3em;">PLAYER PROFILE</div>
     <div style="font-family:'Rajdhani',sans-serif; font-size:32px;
                 font-weight:700; color:#fff; letter-spacing:0.1em;">
-        {selected_player.upper()}
+        {str(selected_player).upper()}
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -398,7 +418,7 @@ fig.add_trace(go.Scatterpolar(
 ))
 fig.add_trace(go.Scatterpolar(
     r=p_vals, theta=categories, fill="toself",
-    name=selected_player.upper(),
+    name=str(selected_player).upper(),
     line=dict(color="#4da3ff", width=2),
     fillcolor="rgba(77,163,255,0.15)"
 ))
@@ -472,7 +492,7 @@ class NumpyEncoder(json.JSONEncoder):
         return super().default(obj)
 
 export_data = {
-    "player":  selected_player,
+    "player":  str(selected_player),
     "metrics": selected_metrics,
     "values": {
         col: "-" if pd.isna(player_data[col])

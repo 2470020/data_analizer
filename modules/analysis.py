@@ -1,11 +1,12 @@
 import pandas as pd
 import numpy as np
 
-LOW_IS_BETTER_KEYWORDS = ["走(秒)", "タイム", "秒"]
+LOW_IS_BETTER_KEYWORDS = ["走(秒)", "タイム", "秒", "run_", "_s"]
 
 
 def _is_low_better(col_name: str) -> bool:
-    return any(kw in col_name for kw in LOW_IS_BETTER_KEYWORDS)
+    return any(kw.lower() in col_name.lower()
+               for kw in LOW_IS_BETTER_KEYWORDS)
 
 
 def calc_team_stats(df: pd.DataFrame, metric_cols: list) -> pd.DataFrame:
@@ -30,8 +31,8 @@ def calc_z_scores(df: pd.DataFrame, metric_cols: list) -> pd.DataFrame:
 
 
 def get_player_data(df: pd.DataFrame, player_name: str,
-                    name_col: str = "選手名") -> pd.Series:
-    return df[df[name_col] == player_name].iloc[0]
+                    name_col: str) -> pd.Series:
+    return df[df[name_col].astype(str) == str(player_name)].iloc[0]
 
 
 def normalize_for_radar(player_data: pd.Series,
