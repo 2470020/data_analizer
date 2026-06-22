@@ -3,13 +3,56 @@ import io
 
 NON_METRIC_COLS = ["選手名", "背番号", "氏名", "ID", "選手ID", "ポジション", "測定日"]
 
+CHUNK_SIZE = 500  # 1回に読み込む行数
 
-def load_excel(uploaded_file) -> pd.DataFrame:
-    df = pd.read_excel(uploaded_file, engine="openpyxl")
+
+def load_excel(uploaded_file, chunk_size: int = CHUNK_SIZE) -> pd.DataFrame:
+    """
+    大きいファイルをチャンク単位で分割読み込みし結合して返す。
+    xlsx・csv両対応。
+    """
+    filename = uploaded_file.name.lower()
+
+    if filename.endswith(".csv"):
+        chunks = []
+        uploaded_file.seek(0)
+        reader = pd.read_csv(
+            uploaded_file,
+            encoding="utf-8-sig",
+            chunksize=chunk_size
+        )
+        for chunk in reader:
+            chunks.append(chunk)
+        df = pd.concat(chunks, ignore_index=True)
+
+    else:
+        # 全行数を取得
+        uploaded_file.seek(0)
+        df_full    = pd.read_excel(uploaded_file, engine="openpyxl",
+                                   header=None)
+        total_rows = len(df_full) - 1  # ヘッダー除く
+
+        # チャンク分割読み込み
+        chunks = []
+        for skip in range(0, total_rows, chunk_size):
+            uploaded_file.seek(0)
+            chunk = pd.read_excel(
+                uploaded_file,
+                engine="openpyxl",
+                skiprows=range(1, skip + 1),
+                nrows=chunk_size
+            )
+            chunks.append(chunk)
+
+        df = pd.concat(chunks, ignore_index=True)
+
+    # 選手ID・測定日の自動付与
     if "選手ID" not in df.columns:
-        df.insert(0, "選手ID", [f"P{str(i+1).zfill(3)}" for i in range(len(df))])
+        df.insert(0, "選手ID",
+                  [f"P{str(i+1).zfill(3)}" for i in range(len(df))])
     if "測定日" not in df.columns:
         df["測定日"] = pd.Timestamp.today().strftime("%Y-%m-%d")
+
     return df
 
 
@@ -24,26 +67,22 @@ def get_metric_columns(df: pd.DataFrame) -> list:
     ]
 
 
-def clean_dataframe(df: pd.DataFrame,
-                    metric_cols: list) -> tuple:
+def clean_dataframe(df: pd.DataFrame, metric_cols: list) -> tuple:
     """
-    null値・外れ値を処理する。
-    - null値 → そのまま保持（表示時に「-」で表示）
-    - 外れ値（±3σ超） → NaNに置換
-    返り値: (クリーニング済みDF, 除外情報の辞書)
+    null値・外れ値（±3σ）を処理する。
+    外れ値はNaNに置換し、レポートとして返す。
     """
-    df      = df.copy()
-    report  = {}
+    df     = df.copy()
+    report = {}
 
     for col in metric_cols:
         mean = df[col].mean(skipna=True)
         std  = df[col].std(skipna=True)
-
         if std > 0:
             outlier_mask = (df[col] - mean).abs() > 3 * std
             if outlier_mask.any():
-                outlier_players = df.loc[outlier_mask, "選手名"].tolist()
-                report[col]     = outlier_players
+                outlier_players      = df.loc[outlier_mask, "選手名"].tolist()
+                report[col]          = outlier_players
                 df.loc[outlier_mask, col] = pd.NA
 
     return df, report

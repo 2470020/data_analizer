@@ -22,10 +22,7 @@ st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=Noto+Sans+JP:wght@400;700&display=swap');
 
-.stApp {
-    background-color: #0a0e1a;
-    color: #e0e6f0;
-}
+.stApp { background-color: #0a0e1a; color: #e0e6f0; }
 [data-testid="stSidebar"] {
     background-color: #0d1220;
     border-right: 1px solid #1e2d4a;
@@ -68,7 +65,6 @@ hr { border-color: #1e2d4a; }
     font-family: 'Rajdhani', sans-serif;
     font-size: 22px;
     font-weight: 700;
-    color: #e0e6f0;
 }
 .param-value.high { color: #4da3ff; }
 .param-value.mid  { color: #e0e6f0; }
@@ -143,6 +139,13 @@ hr { border-color: #1e2d4a; }
     color: #7a9cc0;
     margin-bottom: 12px;
 }
+.progress-info {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 12px;
+    color: #4da3ff;
+    letter-spacing: 0.1em;
+    margin-bottom: 8px;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -156,11 +159,36 @@ with st.sidebar:
         file_name="sample_data.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
-    uploaded_file = st.file_uploader("UPLOAD EXCEL FILE", type=["xlsx"])
+    st.markdown("""
+    <div style="font-family:'Noto Sans JP',sans-serif; font-size:11px;
+                color:#5a7a9a; margin:8px 0 4px; line-height:1.8;">
+        大きいファイルは自動で分割して<br>読み込みます（xlsx / csv対応）
+    </div>
+    """, unsafe_allow_html=True)
+
+    uploaded_files = st.file_uploader(
+        "UPLOAD FILE（xlsx / csv）",
+        type=["xlsx", "csv"],
+        accept_multiple_files=True
+    )
     name_col = st.text_input("選手名の列名", value="選手名")
 
+    if uploaded_files:
+        st.markdown('<div class="section-header">LOADED FILES</div>',
+                    unsafe_allow_html=True)
+        for i, f in enumerate(uploaded_files):
+            size_kb = round(f.size / 1024, 1)
+            st.markdown(f"""
+            <div style="font-family:'Rajdhani',sans-serif; font-size:12px;
+                        color:#7a9cc0; padding:3px 0;
+                        border-bottom:1px solid #1e2d4a;">
+                <span style="color:#4da3ff;">{i+1}/{len(uploaded_files)}</span>
+                　{f.name}<br>
+                <span style="font-size:10px; color:#3a5a7a;">{size_kb} KB</span>
+            </div>""", unsafe_allow_html=True)
+
 # ── タイトル画面 ────────────────────────────────────
-if uploaded_file is None:
+if not uploaded_files:
     st.markdown("""
     <div style="padding: 60px 0 40px;">
         <div class="hero-sub">SPORTS PERFORMANCE ANALYTICS</div>
@@ -202,17 +230,64 @@ if uploaded_file is None:
     """, unsafe_allow_html=True)
     st.stop()
 
-# ── データ読み込み・クリーニング ────────────────────
-df              = load_excel(uploaded_file)
+# ── データ読み込み ──────────────────────────────────
+dfs    = []
+errors = []
+total  = len(uploaded_files)
+
+progress = st.progress(0, text="ファイルを読み込んでいます...")
+
+for i, f in enumerate(uploaded_files):
+    try:
+        df_part = load_excel(f)
+        dfs.append(df_part)
+        progress.progress(
+            (i + 1) / total,
+            text=f"読み込み中... {i+1}/{total}　{f.name}"
+        )
+    except Exception as e:
+        errors.append(f"{f.name}：{e}")
+
+progress.empty()
+
+if errors:
+    for err in errors:
+        st.error(f"読み込み失敗 — {err}")
+
+if not dfs:
+    st.error("有効なファイルがありません。")
+    st.stop()
+
+df = pd.concat(dfs, ignore_index=True)
+
+# 読み込みサマリー
+st.markdown(f"""
+<div class="progress-info">
+    FILES LOADED : {total} &nbsp;|&nbsp; TOTAL PLAYERS : {len(df)}
+</div>
+""", unsafe_allow_html=True)
+
 all_metric_cols = get_metric_columns(df)
 
 if name_col not in df.columns:
     st.error(f"列「{name_col}」が見つかりません。")
     st.stop()
 
+# 重複チェック
+duplicates = df[df.duplicated(subset=[name_col], keep=False)][name_col].unique()
+if len(duplicates) > 0:
+    dup_names = ", ".join(duplicates)
+    st.markdown(f"""
+    <div class="null-warning">
+        <strong>DUPLICATE DETECTED</strong> —
+        同じ選手名が複数存在します：{dup_names}<br>
+        <span style="font-size:11px;">最初のデータを優先します。</span>
+    </div>""", unsafe_allow_html=True)
+    df = df.drop_duplicates(subset=[name_col], keep="first")
+
+# クリーニング
 df, outlier_report = clean_dataframe(df, all_metric_cols)
 
-# 外れ値レポート表示
 if outlier_report:
     warn_lines = "".join(
         f"<div>・ {col}：{', '.join(players)}</div>"
@@ -220,7 +295,7 @@ if outlier_report:
     )
     st.markdown(f"""
     <div class="null-warning">
-        <strong>OUTLIER DETECTED</strong> — 以下の値は外れ値（±3σ）として除外しました<br>
+        <strong>OUTLIER DETECTED</strong> — 外れ値（±3σ）を除外しました<br>
         {warn_lines}
     </div>""", unsafe_allow_html=True)
 
@@ -244,9 +319,9 @@ if not selected_metrics:
     st.stop()
 
 # ── 統計計算 ────────────────────────────────────────
-team_stats   = calc_team_stats(df, selected_metrics)
-player_data  = get_player_data(df, selected_player, name_col)
-advice_list  = generate_advice(player_data, team_stats, selected_metrics)
+team_stats  = calc_team_stats(df, selected_metrics)
+player_data = get_player_data(df, selected_player, name_col)
+advice_list = generate_advice(player_data, team_stats, selected_metrics)
 
 # ── ランク変換 ──────────────────────────────────────
 def z_to_rank(z) -> str:
@@ -282,21 +357,21 @@ st.markdown('<div class="section-header">SKILL PARAMETER SUMMARY</div>',
 
 cells_html = ""
 for item in advice_list:
-    col_name    = item["指標"]
-    val         = item["選手値"]
-    std_val     = float(team_stats.loc[col_name, "標準偏差"])
-    mean_val    = float(team_stats.loc[col_name, "チーム平均"])
-    is_null     = val == "-"
-    z           = None if is_null else (float(val) - mean_val) / std_val if std_val > 0 else 0.0
-    rank        = z_to_rank(z)
-    cls         = z_to_class(z)
-    val_display = "-" if is_null else val
+    col_name = item["指標"]
+    val      = item["選手値"]
+    is_null  = val == "-"
+    std_val  = float(team_stats.loc[col_name, "標準偏差"])
+    mean_val = float(team_stats.loc[col_name, "チーム平均"])
+    z        = None if is_null else (
+                   (float(val) - mean_val) / std_val if std_val > 0 else 0.0)
+    rank     = z_to_rank(z)
+    cls      = z_to_class(z)
 
     cells_html += f"""
     <div class="param-cell">
         <span class="param-label">{col_name}</span>
         <div style="display:flex;align-items:center;gap:8px;">
-            <span class="param-value {cls}">{val_display}</span>
+            <span class="param-value {cls}">{val}</span>
             <span class="rank-badge rank-{rank}">{rank}</span>
         </div>
     </div>"""
@@ -362,7 +437,8 @@ for item in advice_list:
     is_null  = val == "-"
     std_val  = float(team_stats.loc[col_name, "標準偏差"])
     mean_val = float(team_stats.loc[col_name, "チーム平均"])
-    z        = None if is_null else (float(val) - mean_val) / std_val if std_val > 0 else 0.0
+    z        = None if is_null else (
+                   (float(val) - mean_val) / std_val if std_val > 0 else 0.0)
     rank     = z_to_rank(z)
 
     r1, r2, r3 = st.columns([2, 1, 4])

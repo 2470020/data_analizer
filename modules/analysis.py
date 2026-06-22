@@ -10,8 +10,8 @@ def _is_low_better(col_name: str) -> bool:
 
 def calc_team_stats(df: pd.DataFrame, metric_cols: list) -> pd.DataFrame:
     """null値を除いてチーム統計を計算"""
-    stats          = df[metric_cols].agg(["mean", "std"], skipna=True).T
-    stats.columns  = ["チーム平均", "標準偏差"]
+    stats         = df[metric_cols].agg(["mean", "std"]).T
+    stats.columns = ["チーム平均", "標準偏差"]
     return stats
 
 

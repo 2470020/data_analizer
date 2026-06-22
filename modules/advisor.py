@@ -7,7 +7,8 @@ def _is_low_better(col_name: str) -> bool:
     return any(kw in col_name for kw in LOW_IS_BETTER_KEYWORDS)
 
 
-def _calc_z(player_val, mean: float, std: float, col_name: str) -> float:
+def _calc_z(player_val, mean: float, std: float,
+            col_name: str):
     if pd.isna(player_val) or std <= 0:
         return None
     z = (float(player_val) - float(mean)) / float(std)
@@ -25,7 +26,6 @@ def generate_advice(player_data: pd.Series,
         std        = team_stats.loc[col, "標準偏差"]
         z          = _calc_z(player_val, float(mean), float(std), col)
 
-        # null値・外れ値除外済みの場合
         if z is None or pd.isna(player_val):
             advice_list.append({
                 "指標":       col,
