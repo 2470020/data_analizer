@@ -10,7 +10,6 @@ def _is_low_better(col_name: str) -> bool:
 
 
 def calc_team_stats(df: pd.DataFrame, metric_cols: list) -> pd.DataFrame:
-    """null値を除いてチーム統計を計算"""
     stats         = df[metric_cols].agg(["mean", "std"]).T
     stats.columns = ["チーム平均", "標準偏差"]
     return stats
@@ -38,7 +37,6 @@ def get_player_data(df: pd.DataFrame, player_name: str,
 def normalize_for_radar(player_data: pd.Series,
                         team_stats: pd.DataFrame,
                         metric_cols: list) -> tuple:
-    """null値の項目は50（平均）として扱う"""
     player_norm = []
     team_norm   = []
 

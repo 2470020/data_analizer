@@ -173,7 +173,6 @@ with st.sidebar:
         accept_multiple_files=True
     )
 
-    # ── 列名候補をファイルから動的生成 ────────────
     name_col = "選手名"
 
     if uploaded_files:
@@ -293,8 +292,12 @@ if name_col not in df.columns:
     st.error(f"列「{name_col}」が見つかりません。サイドバーで列を確認してください。")
     st.stop()
 
-# 重複チェック
-duplicates = df[df.duplicated(subset=[name_col], keep=False)][name_col].unique()
+# ── 重複チェック（NaNを除外してから判定）──────────
+non_null_df = df[df[name_col].notna()]
+duplicates  = non_null_df[
+    non_null_df.duplicated(subset=[name_col], keep=False)
+][name_col].unique()
+
 if len(duplicates) > 0:
     dup_names = ", ".join([str(d) for d in duplicates])
     st.markdown(f"""
@@ -305,7 +308,10 @@ if len(duplicates) > 0:
     </div>""", unsafe_allow_html=True)
     df = df.drop_duplicates(subset=[name_col], keep="first")
 
-# クリーニング
+# NaN行を除去
+df = df[df[name_col].notna()].reset_index(drop=True)
+
+# ── クリーニング ────────────────────────────────────
 df, outlier_report = clean_dataframe(df, all_metric_cols, name_col=name_col)
 
 if outlier_report:

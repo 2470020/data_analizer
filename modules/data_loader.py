@@ -9,10 +9,6 @@ CHUNK_SIZE = 500
 
 
 def load_excel(uploaded_file, chunk_size: int = CHUNK_SIZE) -> pd.DataFrame:
-    """
-    大きいファイルをチャンク単位で分割読み込みし結合して返す。
-    xlsx・csv両対応。
-    """
     filename = uploaded_file.name.lower()
 
     if filename.endswith(".csv"):
@@ -56,10 +52,6 @@ def load_excel(uploaded_file, chunk_size: int = CHUNK_SIZE) -> pd.DataFrame:
 
 
 def get_column_names(uploaded_file) -> list:
-    """
-    ファイルの列名だけを軽量に先読みして返す。
-    アップロード後のサイドバー候補表示に使用。
-    """
     filename = uploaded_file.name.lower()
     uploaded_file.seek(0)
 
@@ -73,10 +65,6 @@ def get_column_names(uploaded_file) -> list:
 
 
 def guess_name_column(columns: list) -> str:
-    """
-    列名リストから選手識別列を自動推定する。
-    優先キーワード順に検索し、見つからなければ先頭列を返す。
-    """
     priority_keywords = [
         "選手名", "氏名", "名前", "student_id",
         "name", "id", "ID", "選手ID"
@@ -95,7 +83,8 @@ def get_player_list(df: pd.DataFrame, name_col: str) -> list:
 def get_metric_columns(df: pd.DataFrame,
                        name_col: str = "選手名") -> list:
     """
-    数値列のみ抽出。NON_METRIC_COLSと選択された選手名列を除外。
+    数値列のみ抽出。
+    NON_METRIC_COLSと選択された選手名列を両方除外。
     """
     exclude = set(NON_METRIC_COLS) | {name_col}
     return [
