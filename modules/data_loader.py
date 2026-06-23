@@ -3,7 +3,7 @@ import io
 
 NON_METRIC_COLS = ["選手名", "背番号", "氏名", "ID", "選手ID",
                    "ポジション", "測定日", "student_id", "name",
-                   "Name", "StudentID"]
+                   "Name", "StudentID", "id", "No", "NO", "番号"]
 
 CHUNK_SIZE = 500
 
@@ -84,13 +84,20 @@ def get_metric_columns(df: pd.DataFrame,
                        name_col: str = "選手名") -> list:
     """
     数値列のみ抽出。
-    NON_METRIC_COLSと選択された選手名列を両方除外。
+    NON_METRIC_COLSと選択されたname_colを除外。
     """
     exclude = set(NON_METRIC_COLS) | {name_col}
-    return [
-        col for col in df.select_dtypes(include="number").columns
-        if col not in exclude
-    ]
+
+    result = []
+    for col in df.columns:
+        if col in exclude:
+            continue
+        if col.strip() in exclude:
+            continue
+        if pd.api.types.is_numeric_dtype(df[col]):
+            result.append(col)
+
+    return result
 
 
 def clean_dataframe(df: pd.DataFrame,
