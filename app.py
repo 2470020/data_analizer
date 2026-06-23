@@ -280,17 +280,24 @@ if not dfs:
 
 df = pd.concat(dfs, ignore_index=True)
 
-st.markdown(f"""
-<div class="progress-info">
-    FILES LOADED : {total} &nbsp;|&nbsp; TOTAL PLAYERS : {len(df)}
-</div>
-""", unsafe_allow_html=True)
-
-all_metric_cols = get_metric_columns(df, name_col)
-
+# ── name_col確認を先に行う ──────────────────────────
 if name_col not in df.columns:
     st.error(f"列「{name_col}」が見つかりません。サイドバーで列を確認してください。")
     st.stop()
+
+# ── name_colを渡してmetric_colsを取得 ───────────────
+all_metric_cols = get_metric_columns(df, name_col)
+
+if not all_metric_cols:
+    st.error("分析できる数値列が見つかりません。ファイルの内容を確認してください。")
+    st.stop()
+
+st.markdown(f"""
+<div class="progress-info">
+    FILES LOADED : {total} &nbsp;|&nbsp; TOTAL PLAYERS : {len(df)}
+    &nbsp;|&nbsp; PARAMETERS : {len(all_metric_cols)}
+</div>
+""", unsafe_allow_html=True)
 
 # ── 重複チェック（NaNを除外してから判定）──────────
 non_null_df = df[df[name_col].notna()]
