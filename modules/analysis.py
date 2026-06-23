@@ -11,8 +11,7 @@ def _is_low_better(col_name: str) -> bool:
 
 def calc_team_stats(df: pd.DataFrame, metric_cols: list) -> pd.DataFrame:
     """
-    pandas 3.x対応: agg(['mean','std'])は空DataFrameでエラーになるため
-    列ごとに個別計算してDataFrameを構築する。
+    pandas 3.x対応: 列ごとに個別計算してDataFrameを構築する。
     """
     if not metric_cols:
         return pd.DataFrame(columns=["チーム平均", "標準偏差"])
@@ -67,3 +66,46 @@ def normalize_for_radar(player_data: pd.Series,
         team_norm.append(50)
 
     return player_norm, team_norm
+
+
+def calc_overall_ranking(df: pd.DataFrame,
+                         metric_cols: list,
+                         name_col: str) -> pd.DataFrame:
+    """
+    全選手の総合スコア・順位を計算して返す。
+    各指標をZスコア化して平均し、100点満点に変換。
+    """
+    if not metric_cols:
+        return pd.DataFrame()
+
+    z_df = calc_z_scores(df, metric_cols)
+
+    # 有効列（std > 0）のみ平均
+    valid_cols = [c for c in metric_cols
+                  if df[c].std(skipna=True) > 0]
+
+    if not valid_cols:
+        overall = pd.Series(50.0, index=df.index)
+    else:
+        overall = z_df[valid_cols].mean(axis=1, skipna=True)
+        # Zスコア平均 → 0〜100スケール（平均50, ±2σ=0〜100）
+        overall = (overall * 25 + 50).clip(0, 100)
+
+    ranking_df = pd.DataFrame({
+        name_col:     df[name_col].values,
+        "総合スコア": overall.round(1).values,
+    })
+
+    # 各指標のZスコアも付加
+    for col in metric_cols:
+        std = df[col].std(skipna=True)
+        if std > 0:
+            ranking_df[col + "_z"] = z_df[col].round(2).values
+        else:
+            ranking_df[col + "_z"] = 0.0
+
+    ranking_df = ranking_df.sort_values("総合スコア", ascending=False)
+    ranking_df.insert(0, "順位", range(1, len(ranking_df) + 1))
+    ranking_df = ranking_df.reset_index(drop=True)
+
+    return ranking_df
