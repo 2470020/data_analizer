@@ -3,12 +3,34 @@ import io
 
 NON_METRIC_COLS = ["選手名", "背番号", "氏名", "ID", "選手ID",
                    "ポジション", "測定日", "student_id", "name",
-                   "Name", "StudentID", "id", "No", "NO", "番号"]
+                   "Name", "StudentID", "id", "No", "NO", "番号",
+                   "性別", "gender", "Gender", "グループ", "group"]
 
 CHUNK_SIZE = 500
 
 
+def _skip_unit_rows(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    2行目以降に単位行（数値でない行）が混入している場合に除去する。
+    例：「（秒）」「（cm）」などの行をスキップ。
+    """
+    # 数値列が1つもない行を単位行とみなして除去
+    numeric_cols = df.select_dtypes(include="number").columns.tolist()
+    if not numeric_cols:
+        return df
+
+    # 全数値列がNaNまたは非数値の行を除去
+    mask = df[numeric_cols].apply(
+        lambda row: row.notna().any(), axis=1
+    )
+    return df[mask].reset_index(drop=True)
+
+
 def load_excel(uploaded_file, chunk_size: int = CHUNK_SIZE) -> pd.DataFrame:
+    """
+    大きいファイルをチャンク単位で分割読み込みし結合して返す。
+    xlsx・csv両対応。2行目の単位行を自動スキップ。
+    """
     filename = uploaded_file.name.lower()
 
     if filename.endswith(".csv"):
@@ -24,23 +46,47 @@ def load_excel(uploaded_file, chunk_size: int = CHUNK_SIZE) -> pd.DataFrame:
         df = pd.concat(chunks, ignore_index=True)
 
     else:
+        # まず先頭2行を確認して単位行があるか判定
+        uploaded_file.seek(0)
+        preview = pd.read_excel(uploaded_file, engine="openpyxl", nrows=2)
+
+        # 2行目が単位行かどうか判定（数値列が全てNaNなら単位行）
+        has_unit_row = False
+        numeric_cols = preview.select_dtypes(include="number").columns.tolist()
+        if len(preview) >= 2 and numeric_cols:
+            second_row_numeric = preview.iloc[1][numeric_cols].notna().sum()
+            if second_row_numeric == 0:
+                has_unit_row = True
+
         uploaded_file.seek(0)
         df_full    = pd.read_excel(uploaded_file, engine="openpyxl",
                                    header=None)
         total_rows = len(df_full) - 1
+        if has_unit_row:
+            total_rows -= 1  # 単位行分を引く
 
+        # チャンク読み込み
         chunks = []
+        skip_extra = 2 if has_unit_row else 1  # ヘッダー行+単位行をスキップ
+
         for skip in range(0, total_rows, chunk_size):
             uploaded_file.seek(0)
             chunk = pd.read_excel(
                 uploaded_file,
                 engine="openpyxl",
-                skiprows=range(1, skip + 1),
-                nrows=chunk_size
+                skiprows=range(1, skip + skip_extra),
+                nrows=chunk_size,
+                header=0
             )
+            # 単位行が混入している場合に除去
+            if has_unit_row and len(chunk) > 0:
+                chunk = chunk.iloc[1:] if skip == 0 else chunk
             chunks.append(chunk)
 
         df = pd.concat(chunks, ignore_index=True)
+
+    # 完全に空の行を除去
+    df = df.dropna(how="all").reset_index(drop=True)
 
     if "選手ID" not in df.columns and "student_id" not in df.columns:
         df.insert(0, "選手ID",
@@ -92,7 +138,7 @@ def get_metric_columns(df: pd.DataFrame,
     for col in df.columns:
         if col in exclude:
             continue
-        if col.strip() in exclude:
+        if str(col).strip() in exclude:
             continue
         if pd.api.types.is_numeric_dtype(df[col]):
             result.append(col)
@@ -105,7 +151,6 @@ def clean_dataframe(df: pd.DataFrame,
                     name_col: str = "選手名") -> tuple:
     """
     null値・外れ値（±3σ）を処理する。
-    name_colが存在しない場合はインデックス番号で代替。
     """
     df     = df.copy()
     report = {}
