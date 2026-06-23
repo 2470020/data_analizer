@@ -10,9 +10,20 @@ def _is_low_better(col_name: str) -> bool:
 
 
 def calc_team_stats(df: pd.DataFrame, metric_cols: list) -> pd.DataFrame:
-    stats         = df[metric_cols].agg(["mean", "std"]).T
-    stats.columns = ["チーム平均", "標準偏差"]
-    return stats
+    """
+    pandas 3.x対応: agg(['mean','std'])は空DataFrameでエラーになるため
+    列ごとに個別計算してDataFrameを構築する。
+    """
+    if not metric_cols:
+        return pd.DataFrame(columns=["チーム平均", "標準偏差"])
+
+    rows = {}
+    for col in metric_cols:
+        rows[col] = {
+            "チーム平均": df[col].mean(skipna=True),
+            "標準偏差":   df[col].std(skipna=True)
+        }
+    return pd.DataFrame(rows).T
 
 
 def calc_z_scores(df: pd.DataFrame, metric_cols: list) -> pd.DataFrame:

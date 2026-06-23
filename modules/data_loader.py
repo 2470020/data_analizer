@@ -14,16 +14,45 @@ def _skip_unit_rows(df: pd.DataFrame) -> pd.DataFrame:
     2行目以降に単位行（数値でない行）が混入している場合に除去する。
     例：「（秒）」「（cm）」などの行をスキップ。
     """
-    # 数値列が1つもない行を単位行とみなして除去
     numeric_cols = df.select_dtypes(include="number").columns.tolist()
     if not numeric_cols:
         return df
 
-    # 全数値列がNaNまたは非数値の行を除去
     mask = df[numeric_cols].apply(
         lambda row: row.notna().any(), axis=1
     )
     return df[mask].reset_index(drop=True)
+
+
+def _detect_unit_row(preview: pd.DataFrame) -> bool:
+    """
+    2行目が単位行かどうかを判定する。
+    
+    判定ロジック:
+    1. 全列のうち文字列値を持つ列の数をカウント
+    2. 半数以上の列が文字列（単位っぽい値）なら単位行とみなす
+    3. または、非数値列（ID・性別など除く）が1つでも文字列を含めば単位行とみなす
+    """
+    if len(preview) < 1:
+        return False
+
+    row = preview.iloc[0]
+
+    # 各セルの値を確認
+    str_count = 0
+    total_non_empty = 0
+    for val in row:
+        if val is None or (isinstance(val, float) and pd.isna(val)):
+            continue
+        total_non_empty += 1
+        if isinstance(val, str):
+            str_count += 1
+
+    if total_non_empty == 0:
+        return False
+
+    # 半数以上が文字列 → 単位行
+    return str_count / total_non_empty >= 0.5
 
 
 def load_excel(uploaded_file, chunk_size: int = CHUNK_SIZE) -> pd.DataFrame:
@@ -46,17 +75,11 @@ def load_excel(uploaded_file, chunk_size: int = CHUNK_SIZE) -> pd.DataFrame:
         df = pd.concat(chunks, ignore_index=True)
 
     else:
-        # まず先頭2行を確認して単位行があるか判定
+        # 先頭2行を確認して単位行があるか判定
         uploaded_file.seek(0)
-        preview = pd.read_excel(uploaded_file, engine="openpyxl", nrows=2)
+        preview = pd.read_excel(uploaded_file, engine="openpyxl", nrows=1)
 
-        # 2行目が単位行かどうか判定（数値列が全てNaNなら単位行）
-        has_unit_row = False
-        numeric_cols = preview.select_dtypes(include="number").columns.tolist()
-        if len(preview) >= 2 and numeric_cols:
-            second_row_numeric = preview.iloc[1][numeric_cols].notna().sum()
-            if second_row_numeric == 0:
-                has_unit_row = True
+        has_unit_row = _detect_unit_row(preview)
 
         uploaded_file.seek(0)
         df_full    = pd.read_excel(uploaded_file, engine="openpyxl",
