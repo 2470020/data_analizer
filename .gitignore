@@ -1,0 +1,15 @@
+# Pythonのキャッシュ
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# uvの仮想環境
+.venv/
+
+# Streamlitのローカル設定
+.streamlit/config.toml
+
+# OS固有のゴミファイル
+.DS_Store
+Thumbs.db

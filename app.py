@@ -7,8 +7,7 @@ from modules.data_loader import (load_excel, get_column_names,
                                   guess_name_column, get_player_list,
                                   get_metric_columns, create_sample_excel,
                                   clean_dataframe)
-from modules.analysis import (calc_team_stats, get_player_data,
-                               normalize_for_radar)
+from modules.analysis import calc_team_stats, get_player_data, get_radar_data
 from modules.advisor import generate_advice
 from modules.training_generator import (generate_daily_training,
                                           generate_weekly_plan)
@@ -422,25 +421,84 @@ st.markdown(f'<div class="param-grid">{cells_html}</div>',
 st.markdown('<div class="section-header">RADAR CHART</div>',
             unsafe_allow_html=True)
 
-player_norm, team_norm = normalize_for_radar(
-    player_data, team_stats, selected_metrics)
-categories = selected_metrics + [selected_metrics[0]]
-p_vals     = player_norm + [player_norm[0]]
-t_vals     = team_norm   + [team_norm[0]]
+radar = get_radar_data(player_data, team_stats, df, selected_metrics,
+                       percentiles=(10, 90))
+
+def _close(lst):
+    return lst + [lst[0]]
+
+categories = _close(radar["categories"])
+p_vals     = _close(radar["player_norm"])
+t_vals     = _close(radar["team_norm"])
+lo_vals    = _close(radar["p_low"])
+hi_vals    = _close(radar["p_high"])
+
+# ホバー用テキスト（元の値・単位・Zスコアを表示。欠損は明示）
+def _hover_text(i_list):
+    texts = []
+    for i in i_list:
+        col     = radar["categories"][i]
+        raw     = radar["player_raw"][i]
+        unit    = radar["units"][i]
+        z       = radar["z_scores"][i]
+        missing = radar["is_missing"][i]
+        if missing:
+            texts.append(f"{col}<br>選手値: データなし（欠測/外れ値として除外）")
+        else:
+            unit_str = "" if unit in ("その他",) else unit
+            texts.append(
+                f"{col}<br>選手値: {raw}{unit_str}<br>"
+                f"チーム平均: {round(float(team_stats.loc[col,'チーム平均']),2)}{unit_str}<br>"
+                f"Zスコア: {z:+.2f}"
+            )
+    return texts
+
+idx_closed   = list(range(len(radar["categories"]))) + [0]
+hover_player = _hover_text(idx_closed)
 
 fig = go.Figure()
+
+# チームの10〜90パーセンタイル帯（分布の目安）
+fig.add_trace(go.Scatterpolar(
+    r=hi_vals, theta=categories, fill=None,
+    line=dict(color="rgba(122,156,192,0)", width=0),
+    showlegend=False, hoverinfo="skip"
+))
+fig.add_trace(go.Scatterpolar(
+    r=lo_vals, theta=categories, fill="tonext",
+    name="チーム分布（10-90%ile）",
+    line=dict(color="rgba(122,156,192,0)", width=0),
+    fillcolor="rgba(122,156,192,0.18)",
+    hoverinfo="skip"
+))
+
+# チーム平均
 fig.add_trace(go.Scatterpolar(
     r=t_vals, theta=categories, fill="toself",
     name="TEAM AVG",
-    line=dict(color="#1e3a5f", width=1),
-    fillcolor="rgba(30,58,95,0.4)"
+    line=dict(color="#1e3a5f", width=1, dash="dot"),
+    fillcolor="rgba(30,58,95,0.25)",
+    hoverinfo="skip"
 ))
+
+# 選手データ（欠測項目は別マーカーで視覚的に区別）
+marker_colors  = ["#ff8a3d" if m else "#4da3ff" for m in
+                  [radar["is_missing"][i] for i in idx_closed]]
+marker_symbols = ["x" if m else "circle" for m in
+                  [radar["is_missing"][i] for i in idx_closed]]
+
 fig.add_trace(go.Scatterpolar(
     r=p_vals, theta=categories, fill="toself",
     name=str(selected_player).upper(),
     line=dict(color="#4da3ff", width=2),
-    fillcolor="rgba(77,163,255,0.15)"
+    fillcolor="rgba(77,163,255,0.15)",
+    mode="lines+markers",
+    marker=dict(size=7, color=marker_colors, symbol=marker_symbols,
+                line=dict(color="#0a0e1a", width=1)),
+    text=hover_player,
+    hovertemplate="%{text}<extra></extra>"
 ))
+
 fig.update_layout(
     polar=dict(
         bgcolor="#0a0e1a",
@@ -460,11 +518,19 @@ fig.update_layout(
     plot_bgcolor="#0a0e1a",
     font=dict(color="#e0e6f0", family="Rajdhani"),
     legend=dict(bgcolor="#0d1626", bordercolor="#1e2d4a",
-                borderwidth=1, font=dict(size=11)),
-    height=460,
+                borderwidth=1, font=dict(size=10)),
+    height=480,
     margin=dict(t=30, b=30)
 )
 st.plotly_chart(fig, use_container_width=True)
+
+if any(radar["is_missing"]):
+    missing_cols = [c for c, m in zip(radar["categories"], radar["is_missing"]) if m]
+    st.markdown(f"""
+    <div class="null-warning">
+        <span style="color:#ff8a3d;">✕</span> マーカーは欠測/外れ値として除外されたデータです
+        （{'、'.join(missing_cols)}）。グラフ上は中央値(50)として描画していますが、実データではありません。
+    </div>""", unsafe_allow_html=True)
 
 # ── 分析レポート ────────────────────────────────────
 st.markdown('<div class="section-header">ANALYSIS REPORT</div>',
