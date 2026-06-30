@@ -30,17 +30,21 @@ def find_rival(df: pd.DataFrame,
 
     z_df[name_col] = df[name_col].values
 
+    # 名前の表記ゆれ対策（前後の空白を除去して比較）
+    name_series = z_df[name_col].astype(str).str.strip()
+    target_key  = str(selected_player).strip()
+
     # 対象選手のZスコアベクトル
-    target_row = z_df[z_df[name_col].astype(str) == str(selected_player)]
+    target_row = z_df[name_series == target_key]
     if target_row.empty:
-        return {"rival": None, "distance": None}
+        return {"rival": None, "distance": None, "weak_metrics": weak_metrics}
 
     target_vec = target_row[weak_metrics].iloc[0].fillna(0).values
 
     # 自分以外の選手との距離を計算
-    candidates = z_df[z_df[name_col].astype(str) != str(selected_player)].copy()
+    candidates = z_df[name_series != target_key].copy()
     if candidates.empty:
-        return {"rival": None, "distance": None}
+        return {"rival": None, "distance": None, "weak_metrics": weak_metrics}
 
     distances = []
     for _, row in candidates.iterrows():
@@ -65,9 +69,24 @@ def compare_with_rival(df: pd.DataFrame,
                        metric_cols: list) -> list:
     """
     選択選手とライバルの各項目を比較するテーブルを生成する。
+
+    該当する選手が見つからない場合はクラッシュせず、
+    空リストを返す（呼び出し側のfor文は単に何も表示しない）。
     """
-    player_row = df[df[name_col].astype(str) == str(selected_player)].iloc[0]
-    rival_row  = df[df[name_col].astype(str) == str(rival_name)].iloc[0]
+    if rival_name is None:
+        return []
+
+    # 名前の表記ゆれ対策（前後の空白を除去して比較）
+    name_series = df[name_col].astype(str).str.strip()
+
+    player_match = df[name_series == str(selected_player).strip()]
+    rival_match  = df[name_series == str(rival_name).strip()]
+
+    if player_match.empty or rival_match.empty:
+        return []
+
+    player_row = player_match.iloc[0]
+    rival_row  = rival_match.iloc[0]
 
     comparison = []
     for col in metric_cols:
