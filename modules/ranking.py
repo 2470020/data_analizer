@@ -9,6 +9,8 @@ def calc_metric_ranking(df: pd.DataFrame,
     1種目について、全選手の順位表を返す。
     「低い方が良い」種目（タイム系）は analysis.calc_z_scores 内の
     補正により自動的に向きが揃えられる。
+    同じ値（同じZスコア）の選手は同順位とし、次の順位は人数分スキップする
+    （例：1位が2人なら、次は3位）。
 
     返り値カラム： 順位, 名前, 値, Zスコア
     """
@@ -21,8 +23,9 @@ def calc_metric_ranking(df: pd.DataFrame,
     })
 
     rank_df = rank_df.dropna(subset=["値"])
-    rank_df = rank_df.sort_values("Zスコア", ascending=False).reset_index(drop=True)
-    rank_df.insert(0, "順位", rank_df.index + 1)
+    rank_df["順位"] = rank_df["Zスコア"].rank(method="min", ascending=False).astype(int)
+    rank_df = rank_df.sort_values("順位").reset_index(drop=True)
+    rank_df = rank_df[["順位", "名前", "値", "Zスコア"]]
 
     return rank_df
 
@@ -33,6 +36,7 @@ def calc_group_ranking(df: pd.DataFrame,
     """
     同一グループ（単位が同じ種目群）の平均Zスコアで順位表を返す。
     グループ内の欠損種目は無視して平均を取る。
+    同じ平均Zスコアの選手は同順位とし、次の順位は人数分スキップする。
 
     返り値カラム： 順位, 名前, 平均Zスコア
     """
@@ -46,8 +50,9 @@ def calc_group_ranking(df: pd.DataFrame,
     })
 
     rank_df = rank_df.dropna(subset=["平均Zスコア"])
-    rank_df = rank_df.sort_values("平均Zスコア", ascending=False).reset_index(drop=True)
-    rank_df.insert(0, "順位", rank_df.index + 1)
+    rank_df["順位"] = rank_df["平均Zスコア"].rank(method="min", ascending=False).astype(int)
+    rank_df = rank_df.sort_values("順位").reset_index(drop=True)
+    rank_df = rank_df[["順位", "名前", "平均Zスコア"]]
 
     return rank_df
 
@@ -57,6 +62,7 @@ def calc_overall_ranking(df: pd.DataFrame,
                          all_metric_cols: list) -> pd.DataFrame:
     """
     選択中の全種目を対象にした平均Zスコアで、総合順位表を返す。
+    同じ総合Zスコアの選手は同順位とする。
 
     返り値カラム： 順位, 名前, 総合Zスコア
     """
