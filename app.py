@@ -8,10 +8,12 @@ from modules.data_loader import (load_excel, get_column_names,
                                   get_metric_columns, create_sample_excel,
                                   clean_dataframe)
 from modules.analysis import (calc_team_stats, get_player_data,
-                               normalize_for_radar)
+                               normalize_for_radar, group_metrics_by_unit)
 from modules.advisor import generate_advice
 from modules.training_generator import (generate_daily_training,
                                           generate_weekly_plan)
+from modules.rival_finder import find_rival, compare_with_rival
+from modules.advisor_report import generate_coach_report
 from modules.calendar_integration import (is_calendar_connected,
                                            get_auth_url,
                                            push_training_to_calendar,
@@ -245,7 +247,7 @@ if not uploaded_files:
         st.markdown("""
         <div class="stat-box">
             <div class="stat-box-label">FUNCTION 03</div>
-            <div class="stat-box-value">TRAINING<br>MENU</div>
+            <div class="stat-box-value">COACH<br>REPORT</div>
         </div>""", unsafe_allow_html=True)
 
     st.markdown("""
@@ -286,12 +288,10 @@ if not dfs:
 
 df = pd.concat(dfs, ignore_index=True)
 
-# ── name_col確認を先に行う ──────────────────────────
 if name_col not in df.columns:
     st.error(f"列「{name_col}」が見つかりません。サイドバーで列を確認してください。")
     st.stop()
 
-# ── name_colを渡してmetric_colsを取得 ───────────────
 all_metric_cols = get_metric_columns(df, name_col)
 
 if not all_metric_cols:
@@ -305,7 +305,7 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# ── 重複チェック（NaNを除外してから判定）──────────
+# 重複チェック
 non_null_df = df[df[name_col].notna()]
 duplicates  = non_null_df[
     non_null_df.duplicated(subset=[name_col], keep=False)
@@ -321,10 +321,9 @@ if len(duplicates) > 0:
     </div>""", unsafe_allow_html=True)
     df = df.drop_duplicates(subset=[name_col], keep="first")
 
-# NaN行を除去
 df = df[df[name_col].notna()].reset_index(drop=True)
 
-# ── クリーニング ────────────────────────────────────
+# クリーニング
 df, outlier_report = clean_dataframe(df, all_metric_cols, name_col=name_col)
 
 if outlier_report:
@@ -362,7 +361,6 @@ team_stats  = calc_team_stats(df, selected_metrics)
 player_data = get_player_data(df, selected_player, name_col)
 advice_list = generate_advice(player_data, team_stats, selected_metrics)
 
-# ── ランク変換 ──────────────────────────────────────
 def z_to_rank(z) -> str:
     if z is None: return "N"
     if z >= 1.5:  return "S"
@@ -418,53 +416,85 @@ for item in advice_list:
 st.markdown(f'<div class="param-grid">{cells_html}</div>',
             unsafe_allow_html=True)
 
-# ── レーダーチャート ────────────────────────────────
-st.markdown('<div class="section-header">RADAR CHART</div>',
+# ── レーダーチャート（単位別グループ） ──────────────
+st.markdown('<div class="section-header">RADAR CHART（単位別）</div>',
             unsafe_allow_html=True)
 
-player_norm, team_norm = normalize_for_radar(
-    player_data, team_stats, selected_metrics)
-categories = selected_metrics + [selected_metrics[0]]
-p_vals     = player_norm + [player_norm[0]]
-t_vals     = team_norm   + [team_norm[0]]
+metric_groups = group_metrics_by_unit(selected_metrics)
+group_items   = list(metric_groups.items())
+n_cols        = 2
 
-fig = go.Figure()
-fig.add_trace(go.Scatterpolar(
-    r=t_vals, theta=categories, fill="toself",
-    name="TEAM AVG",
-    line=dict(color="#1e3a5f", width=1),
-    fillcolor="rgba(30,58,95,0.4)"
-))
-fig.add_trace(go.Scatterpolar(
-    r=p_vals, theta=categories, fill="toself",
-    name=str(selected_player).upper(),
-    line=dict(color="#4da3ff", width=2),
-    fillcolor="rgba(77,163,255,0.15)"
-))
-fig.update_layout(
-    polar=dict(
-        bgcolor="#0a0e1a",
-        radialaxis=dict(
-            visible=True, range=[0, 100],
-            gridcolor="#1e2d4a", linecolor="#1e2d4a",
-            tickfont=dict(color="#2a4a6a", size=9),
-            tickvals=[25, 50, 75, 100]
-        ),
-        angularaxis=dict(
-            gridcolor="#1e2d4a", linecolor="#1e2d4a",
-            tickfont=dict(color="#7a9cc0", size=11,
-                          family="Noto Sans JP")
-        )
-    ),
-    paper_bgcolor="#0a0e1a",
-    plot_bgcolor="#0a0e1a",
-    font=dict(color="#e0e6f0", family="Rajdhani"),
-    legend=dict(bgcolor="#0d1626", bordercolor="#1e2d4a",
-                borderwidth=1, font=dict(size=11)),
-    height=460,
-    margin=dict(t=30, b=30)
-)
-st.plotly_chart(fig, use_container_width=True)
+for row_start in range(0, len(group_items), n_cols):
+    row_groups = group_items[row_start:row_start + n_cols]
+    cols       = st.columns(len(row_groups))
+
+    for col_widget, (unit, cols_in_group) in zip(cols, row_groups):
+        with col_widget:
+            st.markdown(f"""
+            <div style="font-family:'Rajdhani',sans-serif; font-size:12px;
+                        color:#4da3ff; letter-spacing:0.1em; margin-bottom:4px;">
+                UNIT : {unit}
+            </div>
+            """, unsafe_allow_html=True)
+
+            if len(cols_in_group) < 2:
+                val      = player_data[cols_in_group[0]]
+                mean_val = float(team_stats.loc[cols_in_group[0], "チーム平均"])
+                st.markdown(f"""
+                <div class="param-cell">
+                    <span class="param-label">{cols_in_group[0]}</span>
+                    <span class="param-value mid">
+                        {val if not pd.isna(val) else '-'}
+                        （平均:{round(mean_val,1)}）
+                    </span>
+                </div>
+                """, unsafe_allow_html=True)
+                continue
+
+            group_player_norm, group_team_norm = normalize_for_radar(
+                player_data, team_stats, cols_in_group)
+
+            categories = cols_in_group + [cols_in_group[0]]
+            p_vals     = group_player_norm + [group_player_norm[0]]
+            t_vals     = group_team_norm   + [group_team_norm[0]]
+
+            group_fig = go.Figure()
+            group_fig.add_trace(go.Scatterpolar(
+                r=t_vals, theta=categories, fill="toself",
+                name="TEAM AVG",
+                line=dict(color="#1e3a5f", width=1),
+                fillcolor="rgba(30,58,95,0.4)"
+            ))
+            group_fig.add_trace(go.Scatterpolar(
+                r=p_vals, theta=categories, fill="toself",
+                name=str(selected_player).upper(),
+                line=dict(color="#4da3ff", width=2),
+                fillcolor="rgba(77,163,255,0.15)"
+            ))
+            group_fig.update_layout(
+                polar=dict(
+                    bgcolor="#0a0e1a",
+                    radialaxis=dict(
+                        visible=True, range=[0, 100],
+                        gridcolor="#1e2d4a", linecolor="#1e2d4a",
+                        tickfont=dict(color="#2a4a6a", size=8),
+                        tickvals=[25, 50, 75, 100]
+                    ),
+                    angularaxis=dict(
+                        gridcolor="#1e2d4a", linecolor="#1e2d4a",
+                        tickfont=dict(color="#7a9cc0", size=10,
+                                      family="Noto Sans JP")
+                    )
+                ),
+                paper_bgcolor="#0a0e1a",
+                plot_bgcolor="#0a0e1a",
+                font=dict(color="#e0e6f0", family="Rajdhani"),
+                legend=dict(bgcolor="#0d1626", bordercolor="#1e2d4a",
+                            borderwidth=1, font=dict(size=9)),
+                height=320,
+                margin=dict(t=20, b=20, l=20, r=20)
+            )
+            st.plotly_chart(group_fig, use_container_width=True)
 
 # ── 分析レポート ────────────────────────────────────
 st.markdown('<div class="section-header">ANALYSIS REPORT</div>',
@@ -548,6 +578,86 @@ with tab_weekly:
         </div>
         """, unsafe_allow_html=True)
 
+# ── ライバル選手抽出 ────────────────────────────────
+weak_metric_names = [
+    item["指標"] for item in advice_list
+    if item["判定"] in ("要強化", "重点課題")
+]
+
+rival_info = find_rival(
+    df, team_stats, selected_player, name_col,
+    selected_metrics, weak_metric_names
+)
+
+st.markdown('<div class="section-header">RIVAL PLAYER</div>',
+            unsafe_allow_html=True)
+
+if rival_info.get("rival"):
+    st.markdown(f"""
+    <div style="border-top:2px solid #ff4d4d; padding:12px 0;">
+        <div style="font-family:'Rajdhani',sans-serif; font-size:11px;
+                    color:#ff4d4d; letter-spacing:0.2em;">RIVAL DETECTED</div>
+        <div style="font-family:'Rajdhani',sans-serif; font-size:24px;
+                    font-weight:700; color:#fff;">
+            {rival_info['rival']}
+        </div>
+        <div style="font-family:'Noto Sans JP',sans-serif; font-size:11px;
+                    color:#7a9cc0; margin-top:4px;">
+            類似する課題：{', '.join(rival_info['weak_metrics'])}
+            （距離スコア：{rival_info['distance']}）
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    comparison = compare_with_rival(
+        df, name_col, selected_player,
+        rival_info["rival"], selected_metrics
+    )
+
+    for comp in comparison:
+        c1, c2, c3, c4 = st.columns([2, 1, 1, 1])
+        with c1:
+            st.markdown(f"""
+            <div style="font-family:'Noto Sans JP',sans-serif; font-size:12px;
+                        color:#7a9cc0; padding:6px 0;">{comp['指標']}</div>
+            """, unsafe_allow_html=True)
+        with c2:
+            st.markdown(f"""
+            <div style="font-family:'Rajdhani',sans-serif; font-size:14px;
+                        color:#4da3ff; padding:6px 0;">{comp['自分']}</div>
+            """, unsafe_allow_html=True)
+        with c3:
+            st.markdown(f"""
+            <div style="font-family:'Rajdhani',sans-serif; font-size:14px;
+                        color:#ff7a7a; padding:6px 0;">{comp['ライバル']}</div>
+            """, unsafe_allow_html=True)
+        with c4:
+            st.markdown(f"""
+            <div style="font-family:'Rajdhani',sans-serif; font-size:14px;
+                        color:#e0e6f0; padding:6px 0;">{comp['差']}</div>
+            """, unsafe_allow_html=True)
+else:
+    st.markdown("""
+    <div class="null-warning">比較対象となる選手が見つかりませんでした。</div>
+    """, unsafe_allow_html=True)
+
+# ── コーチレポート ──────────────────────────────────
+st.markdown('<div class="section-header">COACH REPORT</div>',
+            unsafe_allow_html=True)
+
+coach_report = generate_coach_report(
+    str(selected_player), advice_list, rival_info, daily_training
+)
+
+st.markdown(f"""
+<div style="background:#0d1626; border-left:3px solid #4da3ff;
+            padding:16px 20px; font-family:'Noto Sans JP',sans-serif;
+            font-size:13px; color:#c0d0e0; line-height:1.9;
+            white-space:pre-wrap;">
+{coach_report}
+</div>
+""", unsafe_allow_html=True)
+
 # ── Googleカレンダー連携 ────────────────────────────
 st.markdown('<div class="section-header">GOOGLE CALENDAR SYNC</div>',
             unsafe_allow_html=True)
@@ -601,8 +711,10 @@ export_data = {
         for col in selected_metrics
     },
     "advice":          advice_list,
+    "rival":           rival_info,
     "daily_training":  daily_training,
-    "weekly_plan":     weekly_plan
+    "weekly_plan":     weekly_plan,
+    "coach_report":    coach_report
 }
 
 ec1, ec2 = st.columns(2)
