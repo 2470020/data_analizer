@@ -430,17 +430,15 @@ def _close(lst):
 categories = _close(radar["categories"])
 p_vals     = _close(radar["player_norm"])
 t_vals     = _close(radar["team_norm"])
-lo_vals    = _close(radar["p_low"])
-hi_vals    = _close(radar["p_high"])
 
-# ホバー用テキスト（元の値・単位・Zスコアを表示。欠損は明示）
+# ホバー用テキスト（元の値・単位・チーム内パーセンタイル順位を表示。欠損は明示）
 def _hover_text(i_list):
     texts = []
     for i in i_list:
         col     = radar["categories"][i]
         raw     = radar["player_raw"][i]
         unit    = radar["units"][i]
-        z       = radar["z_scores"][i]
+        pct     = radar["percentile"][i]
         missing = radar["is_missing"][i]
         if missing:
             texts.append(f"{col}<br>選手値: データなし（欠測/外れ値として除外）")
@@ -449,7 +447,7 @@ def _hover_text(i_list):
             texts.append(
                 f"{col}<br>選手値: {raw}{unit_str}<br>"
                 f"チーム平均: {round(float(team_stats.loc[col,'チーム平均']),2)}{unit_str}<br>"
-                f"Zスコア: {z:+.2f}"
+                f"チーム内順位: 上位{round(100-pct,1)}%（パーセンタイル {pct}）"
             )
     return texts
 
@@ -458,21 +456,7 @@ hover_player = _hover_text(idx_closed)
 
 fig = go.Figure()
 
-# チームの10〜90パーセンタイル帯（分布の目安）
-fig.add_trace(go.Scatterpolar(
-    r=hi_vals, theta=categories, fill=None,
-    line=dict(color="rgba(122,156,192,0)", width=0),
-    showlegend=False, hoverinfo="skip"
-))
-fig.add_trace(go.Scatterpolar(
-    r=lo_vals, theta=categories, fill="tonext",
-    name="チーム分布（10-90%ile）",
-    line=dict(color="rgba(122,156,192,0)", width=0),
-    fillcolor="rgba(122,156,192,0.18)",
-    hoverinfo="skip"
-))
-
-# チーム平均
+# チーム平均（各軸ごとに平均値が位置するパーセンタイル順位）
 fig.add_trace(go.Scatterpolar(
     r=t_vals, theta=categories, fill="toself",
     name="TEAM AVG",
@@ -506,7 +490,8 @@ fig.update_layout(
             visible=True, range=[0, 100],
             gridcolor="#1e2d4a", linecolor="#1e2d4a",
             tickfont=dict(color="#2a4a6a", size=9),
-            tickvals=[25, 50, 75, 100]
+            tickvals=[10, 25, 50, 75, 90],
+            ticktext=["10%ile", "25%ile", "50%ile", "75%ile", "90%ile"]
         ),
         angularaxis=dict(
             gridcolor="#1e2d4a", linecolor="#1e2d4a",
@@ -523,6 +508,13 @@ fig.update_layout(
     margin=dict(t=30, b=30)
 )
 st.plotly_chart(fig, use_container_width=True)
+
+st.markdown("""
+<div style="font-family:'Noto Sans JP',sans-serif; font-size:11px;
+            color:#5a7a9a; margin:-4px 0 12px;">
+    ※ 各軸はチーム内でのパーセンタイル順位（0-100）です。平均・標準偏差ではなく
+    相対順位に基づくため、外れ値や分布の歪みの影響を受けにくくなっています。
+</div>""", unsafe_allow_html=True)
 
 if any(radar["is_missing"]):
     missing_cols = [c for c, m in zip(radar["categories"], radar["is_missing"]) if m]
