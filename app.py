@@ -7,10 +7,13 @@ from modules.data_loader import (load_excel, get_column_names,
                                   guess_name_column, get_player_list,
                                   get_metric_columns, create_sample_excel,
                                   clean_dataframe)
-from modules.analysis import calc_team_stats, get_player_data, get_radar_data
+from modules.analysis import (calc_team_stats, get_player_data,
+                               get_radar_data, group_metrics_by_unit)
 from modules.advisor import generate_advice
 from modules.training_generator import (generate_daily_training,
                                           generate_weekly_plan)
+from modules.rival_finder import find_rival, compare_with_rival
+from modules.advisor_report import generate_metric_coach_comment, generate_coach_report
 from modules.calendar_integration import (is_calendar_connected,
                                            get_auth_url,
                                            push_training_to_calendar,
@@ -244,7 +247,7 @@ if not uploaded_files:
         st.markdown("""
         <div class="stat-box">
             <div class="stat-box-label">FUNCTION 03</div>
-            <div class="stat-box-value">TRAINING<br>MENU</div>
+            <div class="stat-box-value">AI<br>TRAINER</div>
         </div>""", unsafe_allow_html=True)
 
     st.markdown("""
@@ -285,12 +288,10 @@ if not dfs:
 
 df = pd.concat(dfs, ignore_index=True)
 
-# ── name_col確認を先に行う ──────────────────────────
 if name_col not in df.columns:
     st.error(f"列「{name_col}」が見つかりません。サイドバーで列を確認してください。")
     st.stop()
 
-# ── name_colを渡してmetric_colsを取得 ───────────────
 all_metric_cols = get_metric_columns(df, name_col)
 
 if not all_metric_cols:
@@ -304,7 +305,7 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# ── 重複チェック（NaNを除外してから判定）──────────
+# 重複チェック
 non_null_df = df[df[name_col].notna()]
 duplicates  = non_null_df[
     non_null_df.duplicated(subset=[name_col], keep=False)
@@ -320,10 +321,9 @@ if len(duplicates) > 0:
     </div>""", unsafe_allow_html=True)
     df = df.drop_duplicates(subset=[name_col], keep="first")
 
-# NaN行を除去
 df = df[df[name_col].notna()].reset_index(drop=True)
 
-# ── クリーニング ────────────────────────────────────
+# クリーニング
 df, outlier_report = clean_dataframe(df, all_metric_cols, name_col=name_col)
 
 if outlier_report:
@@ -361,7 +361,6 @@ team_stats  = calc_team_stats(df, selected_metrics)
 player_data = get_player_data(df, selected_player, name_col)
 advice_list = generate_advice(player_data, team_stats, selected_metrics)
 
-# ── ランク変換 ──────────────────────────────────────
 def z_to_rank(z) -> str:
     if z is None: return "N"
     if z >= 1.5:  return "S"
@@ -375,6 +374,15 @@ def z_to_class(z) -> str:
     if z >= 0.5:  return "high"
     if z >= -0.5: return "mid"
     return "low"
+
+def calc_z(col_name: str, val) -> float:
+    """指標の値からZスコアを計算する（欠損ならNone）"""
+    is_null = val == "-"
+    if is_null:
+        return None
+    std_val  = float(team_stats.loc[col_name, "標準偏差"])
+    mean_val = float(team_stats.loc[col_name, "チーム平均"])
+    return (float(val) - mean_val) / std_val if std_val > 0 else 0.0
 
 # ── 選手ヘッダー ────────────────────────────────────
 st.markdown(f"""
@@ -397,11 +405,7 @@ cells_html = ""
 for item in advice_list:
     col_name = item["指標"]
     val      = item["選手値"]
-    is_null  = val == "-"
-    std_val  = float(team_stats.loc[col_name, "標準偏差"])
-    mean_val = float(team_stats.loc[col_name, "チーム平均"])
-    z        = None if is_null else (
-                   (float(val) - mean_val) / std_val if std_val > 0 else 0.0)
+    z        = calc_z(col_name, val)
     rank     = z_to_rank(z)
     cls      = z_to_class(z)
 
@@ -417,97 +421,131 @@ for item in advice_list:
 st.markdown(f'<div class="param-grid">{cells_html}</div>',
             unsafe_allow_html=True)
 
-# ── レーダーチャート ────────────────────────────────
-st.markdown('<div class="section-header">RADAR CHART</div>',
+# ── レーダーチャート（単位別グループ） ──────────────
+st.markdown('<div class="section-header">RADAR CHART（単位別）</div>',
             unsafe_allow_html=True)
 
-radar = get_radar_data(player_data, team_stats, df, selected_metrics,
-                       percentiles=(10, 90))
+metric_groups = group_metrics_by_unit(selected_metrics)
+group_items   = list(metric_groups.items())
+n_cols        = 2
 
-def _close(lst):
-    return lst + [lst[0]]
+for row_start in range(0, len(group_items), n_cols):
+    row_groups = group_items[row_start:row_start + n_cols]
+    cols       = st.columns(len(row_groups))
 
-categories = _close(radar["categories"])
-p_vals     = _close(radar["player_norm"])
-t_vals     = _close(radar["team_norm"])
+    for col_widget, (unit, cols_in_group) in zip(cols, row_groups):
+        with col_widget:
+            st.markdown(f"""
+            <div style="font-family:'Rajdhani',sans-serif; font-size:12px;
+                        color:#4da3ff; letter-spacing:0.1em; margin-bottom:4px;">
+                UNIT : {unit}
+            </div>
+            """, unsafe_allow_html=True)
 
-# ホバー用テキスト（元の値・単位・チーム内パーセンタイル順位を表示。欠損は明示）
-def _hover_text(i_list):
-    texts = []
-    for i in i_list:
-        col     = radar["categories"][i]
-        raw     = radar["player_raw"][i]
-        unit    = radar["units"][i]
-        pct     = radar["percentile"][i]
-        missing = radar["is_missing"][i]
-        if missing:
-            texts.append(f"{col}<br>選手値: データなし（欠測/外れ値として除外）")
-        else:
-            unit_str = "" if unit in ("その他",) else unit
-            texts.append(
-                f"{col}<br>選手値: {raw}{unit_str}<br>"
-                f"チーム平均: {round(float(team_stats.loc[col,'チーム平均']),2)}{unit_str}<br>"
-                f"チーム内順位: 上位{round(100-pct,1)}%（パーセンタイル {pct}）"
+            if len(cols_in_group) < 2:
+                val      = player_data[cols_in_group[0]]
+                mean_val = float(team_stats.loc[cols_in_group[0], "チーム平均"])
+                st.markdown(f"""
+                <div class="param-cell">
+                    <span class="param-label">{cols_in_group[0]}</span>
+                    <span class="param-value mid">
+                        {val if not pd.isna(val) else '-'}
+                        （平均:{round(mean_val,1)}）
+                    </span>
+                </div>
+                """, unsafe_allow_html=True)
+                continue
+
+            # ── パーセンタイル正規化 + ホバー詳細 + 欠測マーカー ──
+            group_radar = get_radar_data(
+                player_data, team_stats, df, cols_in_group)
+
+            def _close(lst):
+                return lst + [lst[0]]
+
+            categories = _close(group_radar["categories"])
+            p_vals     = _close(group_radar["player_norm"])
+            t_vals     = _close(group_radar["team_norm"])
+
+            idx_closed = list(range(len(group_radar["categories"]))) + [0]
+
+            def _hover_text(i_list, radar):
+                texts = []
+                for i in i_list:
+                    col     = radar["categories"][i]
+                    raw     = radar["player_raw"][i]
+                    unit_s  = radar["units"][i]
+                    pct     = radar["percentile"][i]
+                    missing = radar["is_missing"][i]
+                    if missing:
+                        texts.append(f"{col}<br>選手値: データなし（欠測/外れ値として除外）")
+                    else:
+                        u = "" if unit_s == "その他" else unit_s
+                        texts.append(
+                            f"{col}<br>選手値: {raw}{u}<br>"
+                            f"チーム平均: {round(float(team_stats.loc[col,'チーム平均']),2)}{u}<br>"
+                            f"チーム内順位: 上位{round(100-pct,1)}%（パーセンタイル {pct}）"
+                        )
+                return texts
+
+            hover_player = _hover_text(idx_closed, group_radar)
+
+            marker_colors  = ["#ff8a3d" if group_radar["is_missing"][i] else "#4da3ff"
+                              for i in idx_closed]
+            marker_symbols = ["x" if group_radar["is_missing"][i] else "circle"
+                              for i in idx_closed]
+
+            group_fig = go.Figure()
+            group_fig.add_trace(go.Scatterpolar(
+                r=t_vals, theta=categories, fill="toself",
+                name="TEAM AVG",
+                line=dict(color="#1e3a5f", width=1, dash="dot"),
+                fillcolor="rgba(30,58,95,0.25)",
+                hoverinfo="skip"
+            ))
+            group_fig.add_trace(go.Scatterpolar(
+                r=p_vals, theta=categories, fill="toself",
+                name=str(selected_player).upper(),
+                line=dict(color="#4da3ff", width=2),
+                fillcolor="rgba(77,163,255,0.15)",
+                mode="lines+markers",
+                marker=dict(size=6, color=marker_colors, symbol=marker_symbols,
+                            line=dict(color="#0a0e1a", width=1)),
+                text=hover_player,
+                hovertemplate="%{text}<extra></extra>"
+            ))
+            group_fig.update_layout(
+                polar=dict(
+                    bgcolor="#0a0e1a",
+                    radialaxis=dict(
+                        visible=True, range=[0, 100],
+                        gridcolor="#1e2d4a", linecolor="#1e2d4a",
+                        tickfont=dict(color="#2a4a6a", size=8),
+                        tickvals=[10, 25, 50, 75, 90],
+                        ticktext=["10%ile", "25%ile", "50%ile", "75%ile", "90%ile"]
+                    ),
+                    angularaxis=dict(
+                        gridcolor="#1e2d4a", linecolor="#1e2d4a",
+                        tickfont=dict(color="#7a9cc0", size=10,
+                                      family="Noto Sans JP")
+                    )
+                ),
+                paper_bgcolor="#0a0e1a",
+                plot_bgcolor="#0a0e1a",
+                font=dict(color="#e0e6f0", family="Rajdhani"),
+                legend=dict(bgcolor="#0d1626", bordercolor="#1e2d4a",
+                            borderwidth=1, font=dict(size=9)),
+                height=320,
+                margin=dict(t=20, b=20, l=20, r=20)
             )
-    return texts
+            st.plotly_chart(group_fig, use_container_width=True)
 
-idx_closed   = list(range(len(radar["categories"]))) + [0]
-hover_player = _hover_text(idx_closed)
-
-fig = go.Figure()
-
-# チーム平均（各軸ごとに平均値が位置するパーセンタイル順位）
-fig.add_trace(go.Scatterpolar(
-    r=t_vals, theta=categories, fill="toself",
-    name="TEAM AVG",
-    line=dict(color="#1e3a5f", width=1, dash="dot"),
-    fillcolor="rgba(30,58,95,0.25)",
-    hoverinfo="skip"
-))
-
-# 選手データ（欠測項目は別マーカーで視覚的に区別）
-marker_colors  = ["#ff8a3d" if m else "#4da3ff" for m in
-                  [radar["is_missing"][i] for i in idx_closed]]
-marker_symbols = ["x" if m else "circle" for m in
-                  [radar["is_missing"][i] for i in idx_closed]]
-
-fig.add_trace(go.Scatterpolar(
-    r=p_vals, theta=categories, fill="toself",
-    name=str(selected_player).upper(),
-    line=dict(color="#4da3ff", width=2),
-    fillcolor="rgba(77,163,255,0.15)",
-    mode="lines+markers",
-    marker=dict(size=7, color=marker_colors, symbol=marker_symbols,
-                line=dict(color="#0a0e1a", width=1)),
-    text=hover_player,
-    hovertemplate="%{text}<extra></extra>"
-))
-
-fig.update_layout(
-    polar=dict(
-        bgcolor="#0a0e1a",
-        radialaxis=dict(
-            visible=True, range=[0, 100],
-            gridcolor="#1e2d4a", linecolor="#1e2d4a",
-            tickfont=dict(color="#2a4a6a", size=9),
-            tickvals=[10, 25, 50, 75, 90],
-            ticktext=["10%ile", "25%ile", "50%ile", "75%ile", "90%ile"]
-        ),
-        angularaxis=dict(
-            gridcolor="#1e2d4a", linecolor="#1e2d4a",
-            tickfont=dict(color="#7a9cc0", size=11,
-                          family="Noto Sans JP")
-        )
-    ),
-    paper_bgcolor="#0a0e1a",
-    plot_bgcolor="#0a0e1a",
-    font=dict(color="#e0e6f0", family="Rajdhani"),
-    legend=dict(bgcolor="#0d1626", bordercolor="#1e2d4a",
-                borderwidth=1, font=dict(size=10)),
-    height=480,
-    margin=dict(t=30, b=30)
-)
-st.plotly_chart(fig, use_container_width=True)
+            if any(group_radar["is_missing"]):
+                missing_cols = [c for c, m in zip(group_radar["categories"], group_radar["is_missing"]) if m]
+                st.markdown(f"""
+                <div class="null-warning">
+                    <span style="color:#ff8a3d;">✕</span> 欠測/外れ値：{'、'.join(missing_cols)}
+                </div>""", unsafe_allow_html=True)
 
 st.markdown("""
 <div style="font-family:'Noto Sans JP',sans-serif; font-size:11px;
@@ -516,14 +554,6 @@ st.markdown("""
     相対順位に基づくため、外れ値や分布の歪みの影響を受けにくくなっています。
 </div>""", unsafe_allow_html=True)
 
-if any(radar["is_missing"]):
-    missing_cols = [c for c, m in zip(radar["categories"], radar["is_missing"]) if m]
-    st.markdown(f"""
-    <div class="null-warning">
-        <span style="color:#ff8a3d;">✕</span> マーカーは欠測/外れ値として除外されたデータです
-        （{'、'.join(missing_cols)}）。グラフ上は中央値(50)として描画していますが、実データではありません。
-    </div>""", unsafe_allow_html=True)
-
 # ── 分析レポート ────────────────────────────────────
 st.markdown('<div class="section-header">ANALYSIS REPORT</div>',
             unsafe_allow_html=True)
@@ -531,11 +561,7 @@ st.markdown('<div class="section-header">ANALYSIS REPORT</div>',
 for item in advice_list:
     col_name = item["指標"]
     val      = item["選手値"]
-    is_null  = val == "-"
-    std_val  = float(team_stats.loc[col_name, "標準偏差"])
-    mean_val = float(team_stats.loc[col_name, "チーム平均"])
-    z        = None if is_null else (
-                   (float(val) - mean_val) / std_val if std_val > 0 else 0.0)
+    z        = calc_z(col_name, val)
     rank     = z_to_rank(z)
 
     r1, r2, r3 = st.columns([2, 1, 4])
@@ -606,6 +632,123 @@ with tab_weekly:
         </div>
         """, unsafe_allow_html=True)
 
+# ── ライバル選手抽出 ────────────────────────────────
+weak_metric_names = [
+    item["指標"] for item in advice_list
+    if item["判定"] in ("要強化", "重点課題")
+]
+
+rival_info = find_rival(
+    df, team_stats, selected_player, name_col,
+    selected_metrics, weak_metric_names
+)
+
+st.markdown('<div class="section-header">RIVAL PLAYER</div>',
+            unsafe_allow_html=True)
+
+if rival_info.get("rival"):
+    st.markdown(f"""
+    <div style="border-top:2px solid #ff4d4d; padding:12px 0;">
+        <div style="font-family:'Rajdhani',sans-serif; font-size:11px;
+                    color:#ff4d4d; letter-spacing:0.2em;">RIVAL DETECTED</div>
+        <div style="font-family:'Rajdhani',sans-serif; font-size:24px;
+                    font-weight:700; color:#fff;">
+            {rival_info['rival']}
+        </div>
+        <div style="font-family:'Noto Sans JP',sans-serif; font-size:11px;
+                    color:#7a9cc0; margin-top:4px;">
+            類似する課題：{', '.join(rival_info['weak_metrics'])}
+            （距離スコア：{rival_info['distance']}）
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    comparison = compare_with_rival(
+        df, name_col, selected_player,
+        rival_info["rival"], selected_metrics
+    )
+
+    for comp in comparison:
+        c1, c2, c3, c4 = st.columns([2, 1, 1, 1])
+        with c1:
+            st.markdown(f"""
+            <div style="font-family:'Noto Sans JP',sans-serif; font-size:12px;
+                        color:#7a9cc0; padding:6px 0;">{comp['指標']}</div>
+            """, unsafe_allow_html=True)
+        with c2:
+            st.markdown(f"""
+            <div style="font-family:'Rajdhani',sans-serif; font-size:14px;
+                        color:#4da3ff; padding:6px 0;">{comp['自分']}</div>
+            """, unsafe_allow_html=True)
+        with c3:
+            st.markdown(f"""
+            <div style="font-family:'Rajdhani',sans-serif; font-size:14px;
+                        color:#ff7a7a; padding:6px 0;">{comp['ライバル']}</div>
+            """, unsafe_allow_html=True)
+        with c4:
+            st.markdown(f"""
+            <div style="font-family:'Rajdhani',sans-serif; font-size:14px;
+                        color:#e0e6f0; padding:6px 0;">{comp['差']}</div>
+            """, unsafe_allow_html=True)
+else:
+    st.markdown("""
+    <div class="null-warning">比較対象となる選手が見つかりませんでした。</div>
+    """, unsafe_allow_html=True)
+
+# ── AIトレーナー（種目別アドバイス） ────────────────
+st.markdown('<div class="section-header">AI TRAINER — 種目別アドバイス</div>',
+            unsafe_allow_html=True)
+
+st.markdown("""
+<div style="font-family:'Noto Sans JP',sans-serif; font-size:12px;
+            color:#7a9cc0; margin-bottom:12px;">
+    気になる種目のボタンを押すと、AIトレーナーがその種目について
+    アドバイスと今後のトレーニングの方向性をコメントします。
+</div>
+""", unsafe_allow_html=True)
+
+if "selected_metric_comment" not in st.session_state:
+    st.session_state.selected_metric_comment = None
+
+metric_names = [item["指標"] for item in advice_list]
+n_btn_cols = 4
+btn_rows = [metric_names[i:i + n_btn_cols]
+            for i in range(0, len(metric_names), n_btn_cols)]
+
+for row in btn_rows:
+    btn_cols = st.columns(n_btn_cols)
+    for col_widget, metric_name in zip(btn_cols, row):
+        with col_widget:
+            if st.button(metric_name, key=f"metric_btn_{metric_name}",
+                         use_container_width=True):
+                st.session_state.selected_metric_comment = metric_name
+
+if st.session_state.selected_metric_comment:
+    target_item = next(
+        (item for item in advice_list
+         if item["指標"] == st.session_state.selected_metric_comment),
+        None
+    )
+    if target_item:
+        # 数値を含めないコメント生成のため、Zスコアだけを渡す
+        z = calc_z(target_item["指標"], target_item["選手値"])
+        comment_source = {"指標": target_item["指標"], "Zスコア": z}
+        metric_comment = generate_metric_coach_comment(comment_source)
+
+        st.markdown(f"""
+        <div style="background:#0d1626; border-left:3px solid #4da3ff;
+                    padding:16px 20px; margin-top:12px;
+                    font-family:'Noto Sans JP',sans-serif;
+                    font-size:13px; color:#c0d0e0; line-height:1.9;
+                    white-space:pre-wrap;">
+{metric_comment['コメント']}
+        </div>
+        """, unsafe_allow_html=True)
+else:
+    st.markdown("""
+    <div class="null-warning">上のボタンから種目を選んでください。</div>
+    """, unsafe_allow_html=True)
+
 # ── Googleカレンダー連携 ────────────────────────────
 st.markdown('<div class="section-header">GOOGLE CALENDAR SYNC</div>',
             unsafe_allow_html=True)
@@ -645,6 +788,15 @@ class NumpyEncoder(json.JSONEncoder):
         if isinstance(obj, np.ndarray):  return obj.tolist()
         return super().default(obj)
 
+# 種目別のAIトレーナーコメントをまとめてエクスポート用に生成
+metric_comments_export = {}
+for item in advice_list:
+    z = calc_z(item["指標"], item["選手値"])
+    comment_source = {"指標": item["指標"], "Zスコア": z}
+    metric_comments_export[item["指標"]] = generate_metric_coach_comment(
+        comment_source
+    )["コメント"]
+
 export_data = {
     "player":  str(selected_player),
     "metrics": selected_metrics,
@@ -658,9 +810,11 @@ export_data = {
               "std":  float(team_stats.loc[col, "標準偏差"])}
         for col in selected_metrics
     },
-    "advice":          advice_list,
-    "daily_training":  daily_training,
-    "weekly_plan":     weekly_plan
+    "advice":            advice_list,
+    "rival":             rival_info,
+    "daily_training":    daily_training,
+    "weekly_plan":       weekly_plan,
+    "metric_comments":   metric_comments_export
 }
 
 ec1, ec2 = st.columns(2)
