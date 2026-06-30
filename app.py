@@ -26,14 +26,6 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# ── ナビゲーション状態の初期化 ──────────────────────
-if "current_page" not in st.session_state:
-    st.session_state.current_page = "分析結果"
-if "menu_open" not in st.session_state:
-    st.session_state.menu_open = False
-
-PAGE_OPTIONS = ["分析結果", "アドバイザー", "カレンダー", "ライバル"]
-
 # ── グローバルCSS ───────────────────────────────────
 st.markdown("""
 <style>
@@ -56,10 +48,22 @@ st.markdown("""
     background: #1a6fc422;
     border-color: #4da3ff;
 }
-.nav-btn-active button {
-    background: #1a6fc4 !important;
-    color: #fff !important;
+.stTabs [data-baseweb="tab-list"] {
+    gap: 4px;
+}
+.stTabs [data-baseweb="tab"] {
+    background-color: #0d1626;
+    border: 1px solid #1e3a5f;
+    border-radius: 0;
+    font-family: 'Rajdhani', sans-serif;
+    letter-spacing: 0.1em;
+    color: #7a9cc0;
+    padding: 8px 20px;
+}
+.stTabs [aria-selected="true"] {
+    background-color: #1a6fc422 !important;
     border-color: #4da3ff !important;
+    color: #4da3ff !important;
 }
 hr { border-color: #1e2d4a; }
 .param-grid {
@@ -227,20 +231,6 @@ with st.sidebar:
             </div>""", unsafe_allow_html=True)
     else:
         name_col = st.text_input("選手名の列名", value="選手名")
-
-    # ── MENUナビゲーション（MENUボタンを押すと表示） ──
-    if st.session_state.menu_open:
-        st.markdown('<div class="section-header">MENU</div>',
-                    unsafe_allow_html=True)
-        for page_name in PAGE_OPTIONS:
-            is_active = (st.session_state.current_page == page_name)
-            wrapper_class = "nav-btn-active" if is_active else ""
-            st.markdown(f'<div class="{wrapper_class}">',
-                        unsafe_allow_html=True)
-            if st.button(page_name, key=f"nav_{page_name}",
-                         use_container_width=True):
-                st.session_state.current_page = page_name
-            st.markdown('</div>', unsafe_allow_html=True)
 
 # ── タイトル画面 ────────────────────────────────────
 if not uploaded_files:
@@ -411,29 +401,16 @@ def calc_z(col_name: str, val) -> float:
     mean_val = float(team_stats.loc[col_name, "チーム平均"])
     return (float(val) - mean_val) / std_val if std_val > 0 else 0.0
 
-# ── 選手ヘッダー & MENUボタン（右上） ────────────────
-header_col, menu_col = st.columns([5, 1])
-with header_col:
-    st.markdown(f"""
-    <div style="border-top:2px solid #1a6fc4; border-bottom:1px solid #1e2d4a;
-                padding:16px 0; margin:24px 0 8px;">
-        <div style="font-family:'Rajdhani',sans-serif; font-size:11px;
-                    color:#4da3ff; letter-spacing:0.3em;">PLAYER PROFILE</div>
-        <div style="font-family:'Rajdhani',sans-serif; font-size:32px;
-                    font-weight:700; color:#fff; letter-spacing:0.1em;">
-            {str(selected_player).upper()}
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-with menu_col:
-    st.markdown('<div style="margin-top:32px;"></div>', unsafe_allow_html=True)
-    if st.button("☰ MENU", key="toggle_menu", use_container_width=True):
-        st.session_state.menu_open = not st.session_state.menu_open
-
+# ── 選手ヘッダー ────────────────────────────────────
 st.markdown(f"""
-<div style="font-family:'Rajdhani',sans-serif; font-size:11px;
-            color:#4da3ff; letter-spacing:0.2em; margin-bottom:16px;">
-    PAGE : {st.session_state.current_page.upper()}
+<div style="border-top:2px solid #1a6fc4; border-bottom:1px solid #1e2d4a;
+            padding:16px 0; margin:24px 0 8px;">
+    <div style="font-family:'Rajdhani',sans-serif; font-size:11px;
+                color:#4da3ff; letter-spacing:0.3em;">PLAYER PROFILE</div>
+    <div style="font-family:'Rajdhani',sans-serif; font-size:32px;
+                font-weight:700; color:#fff; letter-spacing:0.1em;">
+        {str(selected_player).upper()}
+    </div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -451,12 +428,14 @@ rival_info = find_rival(
 daily_training = generate_daily_training(advice_list)
 weekly_plan    = generate_weekly_plan(advice_list)
 
-current_page = st.session_state.current_page
+tab_result, tab_training, tab_rival, tab_calendar = st.tabs(
+    ["分析結果", "トレーニング", "ライバル", "カレンダー"]
+)
 
 # ════════════════════════════════════════════════════
-# ページ：分析結果
+# タブ：分析結果
 # ════════════════════════════════════════════════════
-if current_page == "分析結果":
+with tab_result:
 
     # ── パラメーターグリッド ────────────────────────
     st.markdown('<div class="section-header">SKILL PARAMETER SUMMARY</div>',
@@ -620,9 +599,9 @@ if current_page == "分析結果":
         )
 
 # ════════════════════════════════════════════════════
-# ページ：アドバイザー
+# タブ：トレーニング
 # ════════════════════════════════════════════════════
-elif current_page == "アドバイザー":
+with tab_training:
 
     # ── トレーニングメニュー ────────────────────────
     st.markdown('<div class="section-header">TRAINING MENU</div>',
@@ -723,9 +702,9 @@ elif current_page == "アドバイザー":
         """, unsafe_allow_html=True)
 
 # ════════════════════════════════════════════════════
-# ページ：カレンダー
+# タブ：カレンダー
 # ════════════════════════════════════════════════════
-elif current_page == "カレンダー":
+with tab_calendar:
 
     st.markdown('<div class="section-header">GOOGLE CALENDAR SYNC</div>',
                 unsafe_allow_html=True)
@@ -755,9 +734,9 @@ elif current_page == "カレンダー":
         st.button("Googleアカウントで連携（準備中）", disabled=True)
 
 # ════════════════════════════════════════════════════
-# ページ：ライバル
+# タブ：ライバル
 # ════════════════════════════════════════════════════
-elif current_page == "ライバル":
+with tab_rival:
 
     st.markdown('<div class="section-header">RIVAL PLAYER</div>',
                 unsafe_allow_html=True)
