@@ -501,35 +501,6 @@ for row_start in range(0, len(group_items), n_cols):
             )
             st.plotly_chart(group_fig, use_container_width=True)
 
-# ── 分析レポート ────────────────────────────────────
-st.markdown('<div class="section-header">ANALYSIS REPORT</div>',
-            unsafe_allow_html=True)
-
-for item in advice_list:
-    col_name = item["指標"]
-    val      = item["選手値"]
-    z        = calc_z(col_name, val)
-    rank     = z_to_rank(z)
-
-    r1, r2, r3 = st.columns([2, 1, 4])
-    with r1:
-        st.markdown(f"""
-        <div style="font-family:'Noto Sans JP',sans-serif;
-                    font-size:12px; color:#7a9cc0; padding:6px 0;">
-            {col_name}
-        </div>""", unsafe_allow_html=True)
-    with r2:
-        st.markdown(
-            f'<div style="padding:4px 0;">'
-            f'<span class="rank-badge rank-{rank}">{rank}</span></div>',
-            unsafe_allow_html=True)
-    with r3:
-        st.markdown(f"""
-        <div style="font-family:'Noto Sans JP',sans-serif;
-                    font-size:12px; color:#5a7a9a; padding:6px 0;">
-            {item["コメント"]}
-        </div>""", unsafe_allow_html=True)
-
 # ── トレーニングメニュー ────────────────────────────
 st.markdown('<div class="section-header">TRAINING MENU</div>',
             unsafe_allow_html=True)
