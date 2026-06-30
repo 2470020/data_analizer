@@ -13,6 +13,8 @@ from modules.advisor import generate_advice
 from modules.training_generator import (generate_daily_training,
                                           generate_weekly_plan)
 from modules.rival_finder import find_rival, compare_with_rival
+from modules.ranking import (calc_metric_ranking, calc_group_ranking,
+                              calc_overall_ranking, get_player_rank)
 from modules.advisor_report import generate_metric_coach_comment, generate_coach_report
 from modules.calendar_integration import (is_calendar_connected,
                                            get_auth_url,
@@ -428,8 +430,8 @@ rival_info = find_rival(
 daily_training = generate_daily_training(advice_list)
 weekly_plan    = generate_weekly_plan(advice_list)
 
-tab_result, tab_training, tab_rival, tab_calendar = st.tabs(
-    ["分析結果", "トレーニング", "ライバル", "カレンダー"]
+tab_result, tab_training, tab_ranking, tab_rival, tab_calendar = st.tabs(
+    ["分析結果", "トレーニング", "ランキング", "ライバル", "カレンダー"]
 )
 
 # ════════════════════════════════════════════════════
@@ -732,6 +734,170 @@ with tab_calendar:
         </div>
         """, unsafe_allow_html=True)
         st.button("Googleアカウントで連携（準備中）", disabled=True)
+
+# ════════════════════════════════════════════════════
+# タブ：ランキング
+# ════════════════════════════════════════════════════
+with tab_ranking:
+
+    rank_sub_metric, rank_sub_group, rank_sub_overall = st.tabs(
+        ["種目別", "グループ別", "総合"]
+    )
+
+    # ── 種目別ランキング ─────────────────────────────
+    with rank_sub_metric:
+        st.markdown('<div class="section-header">種目別ランキング</div>',
+                    unsafe_allow_html=True)
+
+        rank_metric_choice = st.selectbox(
+            "ランキングを見る種目を選択",
+            options=selected_metrics,
+            key="rank_metric_select"
+        )
+
+        metric_rank_df = calc_metric_ranking(df, name_col, rank_metric_choice)
+
+        my_rank = get_player_rank(metric_rank_df, "名前", selected_player)
+        if my_rank:
+            st.markdown(f"""
+            <div style="border-top:2px solid #4da3ff; padding:10px 0; margin-bottom:12px;">
+                <span style="font-family:'Rajdhani',sans-serif; font-size:13px; color:#4da3ff;">
+                    {str(selected_player).upper()} の順位：
+                </span>
+                <span style="font-family:'Rajdhani',sans-serif; font-size:22px;
+                            font-weight:700; color:#fff;">
+                    {my_rank['順位']} 位
+                </span>
+                <span style="font-family:'Rajdhani',sans-serif; font-size:12px; color:#7a9cc0;">
+                    / {len(metric_rank_df)}人中
+                </span>
+            </div>
+            """, unsafe_allow_html=True)
+
+        rows_html = ""
+        for _, row in metric_rank_df.iterrows():
+            is_me = str(row["名前"]).strip() == str(selected_player).strip()
+            highlight = "border-left:3px solid #4da3ff;" if is_me else ""
+            rows_html += f"""
+            <div class="param-cell" style="{highlight} margin-bottom:2px;">
+                <span class="param-label">
+                    <span class="rank-badge rank-{'S' if row['順位']==1 else ('A' if row['順位']<=3 else 'B')}">
+                        {row['順位']}
+                    </span>
+                    &nbsp;{row['名前']}
+                </span>
+                <span class="param-value mid">{row['値']}</span>
+            </div>"""
+        st.markdown(rows_html, unsafe_allow_html=True)
+
+    # ── グループ別ランキング ─────────────────────────
+    with rank_sub_group:
+        st.markdown('<div class="section-header">グループ別ランキング（単位ごと）</div>',
+                    unsafe_allow_html=True)
+
+        metric_groups = group_metrics_by_unit(selected_metrics)
+        group_names   = list(metric_groups.keys())
+
+        rank_group_choice = st.selectbox(
+            "ランキングを見るグループ（単位）を選択",
+            options=group_names,
+            key="rank_group_select"
+        )
+
+        cols_in_group = metric_groups[rank_group_choice]
+        st.markdown(f"""
+        <div style="font-family:'Noto Sans JP',sans-serif; font-size:11px;
+                    color:#7a9cc0; margin-bottom:8px;">
+            対象種目：{', '.join(cols_in_group)}
+        </div>
+        """, unsafe_allow_html=True)
+
+        if len(cols_in_group) < 2:
+            st.markdown("""
+            <div class="null-warning">
+                このグループは種目が1つのため、種目別ランキングをご覧ください。
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            group_rank_df = calc_group_ranking(df, name_col, cols_in_group)
+
+            my_group_rank = get_player_rank(group_rank_df, "名前", selected_player)
+            if my_group_rank:
+                st.markdown(f"""
+                <div style="border-top:2px solid #4da3ff; padding:10px 0; margin-bottom:12px;">
+                    <span style="font-family:'Rajdhani',sans-serif; font-size:13px; color:#4da3ff;">
+                        {str(selected_player).upper()} の順位：
+                    </span>
+                    <span style="font-family:'Rajdhani',sans-serif; font-size:22px;
+                                font-weight:700; color:#fff;">
+                        {my_group_rank['順位']} 位
+                    </span>
+                    <span style="font-family:'Rajdhani',sans-serif; font-size:12px; color:#7a9cc0;">
+                        / {len(group_rank_df)}人中
+                    </span>
+                </div>
+                """, unsafe_allow_html=True)
+
+            rows_html = ""
+            for _, row in group_rank_df.iterrows():
+                is_me = str(row["名前"]).strip() == str(selected_player).strip()
+                highlight = "border-left:3px solid #4da3ff;" if is_me else ""
+                rows_html += f"""
+                <div class="param-cell" style="{highlight} margin-bottom:2px;">
+                    <span class="param-label">
+                        <span class="rank-badge rank-{'S' if row['順位']==1 else ('A' if row['順位']<=3 else 'B')}">
+                            {row['順位']}
+                        </span>
+                        &nbsp;{row['名前']}
+                    </span>
+                    <span class="param-value mid">{round(row['平均Zスコア'], 2)}</span>
+                </div>"""
+            st.markdown(rows_html, unsafe_allow_html=True)
+
+    # ── 総合ランキング ───────────────────────────────
+    with rank_sub_overall:
+        st.markdown('<div class="section-header">総合ランキング</div>',
+                    unsafe_allow_html=True)
+        st.markdown("""
+        <div style="font-family:'Noto Sans JP',sans-serif; font-size:11px;
+                    color:#7a9cc0; margin-bottom:8px;">
+            選択中の全種目の平均Zスコアで算出した総合順位です。
+        </div>
+        """, unsafe_allow_html=True)
+
+        overall_rank_df = calc_overall_ranking(df, name_col, selected_metrics)
+
+        my_overall_rank = get_player_rank(overall_rank_df, "名前", selected_player)
+        if my_overall_rank:
+            st.markdown(f"""
+            <div style="border-top:2px solid #ffd700; padding:10px 0; margin-bottom:12px;">
+                <span style="font-family:'Rajdhani',sans-serif; font-size:13px; color:#ffd700;">
+                    {str(selected_player).upper()} の総合順位：
+                </span>
+                <span style="font-family:'Rajdhani',sans-serif; font-size:22px;
+                            font-weight:700; color:#fff;">
+                    {my_overall_rank['順位']} 位
+                </span>
+                <span style="font-family:'Rajdhani',sans-serif; font-size:12px; color:#7a9cc0;">
+                    / {len(overall_rank_df)}人中
+                </span>
+            </div>
+            """, unsafe_allow_html=True)
+
+        rows_html = ""
+        for _, row in overall_rank_df.iterrows():
+            is_me = str(row["名前"]).strip() == str(selected_player).strip()
+            highlight = "border-left:3px solid #ffd700;" if is_me else ""
+            rank_cls = "S" if row["順位"] == 1 else ("A" if row["順位"] <= 3 else "B")
+            rows_html += f"""
+            <div class="param-cell" style="{highlight} margin-bottom:2px;">
+                <span class="param-label">
+                    <span class="rank-badge rank-{rank_cls}">{row['順位']}</span>
+                    &nbsp;{row['名前']}
+                </span>
+                <span class="param-value mid">{round(row['総合Zスコア'], 2)}</span>
+            </div>"""
+        st.markdown(rows_html, unsafe_allow_html=True)
 
 # ════════════════════════════════════════════════════
 # タブ：ライバル
