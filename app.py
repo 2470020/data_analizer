@@ -13,7 +13,7 @@ from modules.advisor import generate_advice
 from modules.training_generator import (generate_daily_training,
                                           generate_weekly_plan)
 from modules.rival_finder import find_rival, compare_with_rival
-from modules.advisor_report import generate_coach_report
+from modules.advisor_report import generate_metric_coach_comment, generate_coach_report
 from modules.calendar_integration import (is_calendar_connected,
                                            get_auth_url,
                                            push_training_to_calendar,
@@ -247,7 +247,7 @@ if not uploaded_files:
         st.markdown("""
         <div class="stat-box">
             <div class="stat-box-label">FUNCTION 03</div>
-            <div class="stat-box-value">COACH<br>REPORT</div>
+            <div class="stat-box-value">AI<br>TRAINER</div>
         </div>""", unsafe_allow_html=True)
 
     st.markdown("""
@@ -375,6 +375,15 @@ def z_to_class(z) -> str:
     if z >= -0.5: return "mid"
     return "low"
 
+def calc_z(col_name: str, val) -> float:
+    """指標の値からZスコアを計算する（欠損ならNone）"""
+    is_null = val == "-"
+    if is_null:
+        return None
+    std_val  = float(team_stats.loc[col_name, "標準偏差"])
+    mean_val = float(team_stats.loc[col_name, "チーム平均"])
+    return (float(val) - mean_val) / std_val if std_val > 0 else 0.0
+
 # ── 選手ヘッダー ────────────────────────────────────
 st.markdown(f"""
 <div style="border-top:2px solid #1a6fc4; border-bottom:1px solid #1e2d4a;
@@ -396,11 +405,7 @@ cells_html = ""
 for item in advice_list:
     col_name = item["指標"]
     val      = item["選手値"]
-    is_null  = val == "-"
-    std_val  = float(team_stats.loc[col_name, "標準偏差"])
-    mean_val = float(team_stats.loc[col_name, "チーム平均"])
-    z        = None if is_null else (
-                   (float(val) - mean_val) / std_val if std_val > 0 else 0.0)
+    z        = calc_z(col_name, val)
     rank     = z_to_rank(z)
     cls      = z_to_class(z)
 
@@ -503,11 +508,7 @@ st.markdown('<div class="section-header">ANALYSIS REPORT</div>',
 for item in advice_list:
     col_name = item["指標"]
     val      = item["選手値"]
-    is_null  = val == "-"
-    std_val  = float(team_stats.loc[col_name, "標準偏差"])
-    mean_val = float(team_stats.loc[col_name, "チーム平均"])
-    z        = None if is_null else (
-                   (float(val) - mean_val) / std_val if std_val > 0 else 0.0)
+    z        = calc_z(col_name, val)
     rank     = z_to_rank(z)
 
     r1, r2, r3 = st.columns([2, 1, 4])
@@ -641,22 +642,59 @@ else:
     <div class="null-warning">比較対象となる選手が見つかりませんでした。</div>
     """, unsafe_allow_html=True)
 
-# ── コーチレポート ──────────────────────────────────
-st.markdown('<div class="section-header">COACH REPORT</div>',
+# ── AIトレーナー（種目別アドバイス） ────────────────
+st.markdown('<div class="section-header">AI TRAINER — 種目別アドバイス</div>',
             unsafe_allow_html=True)
 
-coach_report = generate_coach_report(
-    str(selected_player), advice_list, rival_info, daily_training
-)
-
-st.markdown(f"""
-<div style="background:#0d1626; border-left:3px solid #4da3ff;
-            padding:16px 20px; font-family:'Noto Sans JP',sans-serif;
-            font-size:13px; color:#c0d0e0; line-height:1.9;
-            white-space:pre-wrap;">
-{coach_report}
+st.markdown("""
+<div style="font-family:'Noto Sans JP',sans-serif; font-size:12px;
+            color:#7a9cc0; margin-bottom:12px;">
+    気になる種目のボタンを押すと、AIトレーナーがその種目について
+    アドバイスと今後のトレーニングの方向性をコメントします。
 </div>
 """, unsafe_allow_html=True)
+
+if "selected_metric_comment" not in st.session_state:
+    st.session_state.selected_metric_comment = None
+
+metric_names = [item["指標"] for item in advice_list]
+n_btn_cols = 4
+btn_rows = [metric_names[i:i + n_btn_cols]
+            for i in range(0, len(metric_names), n_btn_cols)]
+
+for row in btn_rows:
+    btn_cols = st.columns(n_btn_cols)
+    for col_widget, metric_name in zip(btn_cols, row):
+        with col_widget:
+            if st.button(metric_name, key=f"metric_btn_{metric_name}",
+                         use_container_width=True):
+                st.session_state.selected_metric_comment = metric_name
+
+if st.session_state.selected_metric_comment:
+    target_item = next(
+        (item for item in advice_list
+         if item["指標"] == st.session_state.selected_metric_comment),
+        None
+    )
+    if target_item:
+        # 数値を含めないコメント生成のため、Zスコアだけを渡す
+        z = calc_z(target_item["指標"], target_item["選手値"])
+        comment_source = {"指標": target_item["指標"], "Zスコア": z}
+        metric_comment = generate_metric_coach_comment(comment_source)
+
+        st.markdown(f"""
+        <div style="background:#0d1626; border-left:3px solid #4da3ff;
+                    padding:16px 20px; margin-top:12px;
+                    font-family:'Noto Sans JP',sans-serif;
+                    font-size:13px; color:#c0d0e0; line-height:1.9;
+                    white-space:pre-wrap;">
+{metric_comment['コメント']}
+        </div>
+        """, unsafe_allow_html=True)
+else:
+    st.markdown("""
+    <div class="null-warning">上のボタンから種目を選んでください。</div>
+    """, unsafe_allow_html=True)
 
 # ── Googleカレンダー連携 ────────────────────────────
 st.markdown('<div class="section-header">GOOGLE CALENDAR SYNC</div>',
@@ -697,6 +735,15 @@ class NumpyEncoder(json.JSONEncoder):
         if isinstance(obj, np.ndarray):  return obj.tolist()
         return super().default(obj)
 
+# 種目別のAIトレーナーコメントをまとめてエクスポート用に生成
+metric_comments_export = {}
+for item in advice_list:
+    z = calc_z(item["指標"], item["選手値"])
+    comment_source = {"指標": item["指標"], "Zスコア": z}
+    metric_comments_export[item["指標"]] = generate_metric_coach_comment(
+        comment_source
+    )["コメント"]
+
 export_data = {
     "player":  str(selected_player),
     "metrics": selected_metrics,
@@ -710,11 +757,11 @@ export_data = {
               "std":  float(team_stats.loc[col, "標準偏差"])}
         for col in selected_metrics
     },
-    "advice":          advice_list,
-    "rival":           rival_info,
-    "daily_training":  daily_training,
-    "weekly_plan":     weekly_plan,
-    "coach_report":    coach_report
+    "advice":            advice_list,
+    "rival":             rival_info,
+    "daily_training":    daily_training,
+    "weekly_plan":       weekly_plan,
+    "metric_comments":   metric_comments_export
 }
 
 ec1, ec2 = st.columns(2)
