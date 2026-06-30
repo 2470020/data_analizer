@@ -740,12 +740,16 @@ with tab_calendar:
 # ════════════════════════════════════════════════════
 with tab_ranking:
 
-    rank_sub_metric, rank_sub_group, rank_sub_overall = st.tabs(
-        ["種目別", "グループ別", "総合"]
+    ranking_view = st.radio(
+        "ランキング種別",
+        options=["種目別", "グループ別", "総合"],
+        horizontal=True,
+        key="ranking_view_select",
+        label_visibility="collapsed"
     )
 
     # ── 種目別ランキング ─────────────────────────────
-    with rank_sub_metric:
+    if ranking_view == "種目別":
         st.markdown('<div class="section-header">種目別ランキング</div>',
                     unsafe_allow_html=True)
 
@@ -791,7 +795,7 @@ with tab_ranking:
         st.markdown(rows_html, unsafe_allow_html=True)
 
     # ── グループ別ランキング ─────────────────────────
-    with rank_sub_group:
+    elif ranking_view == "グループ別":
         st.markdown('<div class="section-header">グループ別ランキング（単位ごと）</div>',
                     unsafe_allow_html=True)
 
@@ -855,7 +859,7 @@ with tab_ranking:
             st.markdown(rows_html, unsafe_allow_html=True)
 
     # ── 総合ランキング ───────────────────────────────
-    with rank_sub_overall:
+    elif ranking_view == "総合":
         st.markdown('<div class="section-header">総合ランキング</div>',
                     unsafe_allow_html=True)
         st.markdown("""
