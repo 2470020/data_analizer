@@ -29,77 +29,127 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# ── テーマ定義（ダーク／ライト） ─────────────────────
+if "theme" not in st.session_state:
+    st.session_state.theme = "dark"
+
+DARK_THEME = {
+    "bg":             "#1a2028",  # 旧: #0a0e1a（純黒に近いネイビー）→ チャコールグレーへ
+    "sidebar_bg":     "#20262f",
+    "card_bg":        "#232b38",
+    "card_bg_alt":    "#2a3341",
+    "border":         "#2e3847",
+    "border_strong":  "#3d4d63",
+    "text_primary":   "#e8edf4",
+    "text_secondary": "#8ea3bd",
+    "text_muted":     "#5f7692",
+    "text_faint":     "#465b73",
+    "accent":         "#5eb0ff",
+    "accent_border":  "#2a7fd4",
+    "accent_soft":    "#5eb0ff22",
+    "white":          "#ffffff",
+    "gold":           "#ffd700",
+    "warn":           "#ff9a4d",
+    "danger":         "#ff6b6b",
+    "rival":          "#ff7a7a",
+    "shadow":         "0 2px 12px rgba(0,0,0,0.35)",
+}
+
+LIGHT_THEME = {
+    "bg":             "#f2f4f8",
+    "sidebar_bg":     "#ffffff",
+    "card_bg":        "#ffffff",
+    "card_bg_alt":    "#eef1f6",
+    "border":         "#dce3ec",
+    "border_strong":  "#b9c6d6",
+    "text_primary":   "#1c2733",
+    "text_secondary": "#51637a",
+    "text_muted":     "#8296ac",
+    "text_faint":     "#a8b8c9",
+    "accent":         "#1a6fc4",
+    "accent_border":  "#1a6fc4",
+    "accent_soft":    "#1a6fc422",
+    "white":          "#0c2a4a",
+    "gold":           "#8a6d00",
+    "warn":           "#a85a10",
+    "danger":         "#b23a3a",
+    "rival":          "#b23a3a",
+    "shadow":         "0 2px 10px rgba(20,30,50,0.12)",
+}
+
+THEME = DARK_THEME if st.session_state.theme == "dark" else LIGHT_THEME
+
 # ── グローバルCSS ───────────────────────────────────
-st.markdown("""
+st.markdown(f"""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=Noto+Sans+JP:wght@400;700&display=swap');
 
-.stApp { background-color: #0a0e1a; color: #e0e6f0; }
-[data-testid="stSidebar"] {
-    background-color: #0d1220;
-    border-right: 1px solid #1e2d4a;
-}
-.stButton > button, .stDownloadButton > button {
+.stApp {{ background-color: {THEME['bg']}; color: {THEME['text_primary']}; }}
+[data-testid="stSidebar"] {{
+    background-color: {THEME['sidebar_bg']};
+    border-right: 1px solid {THEME['border']};
+}}
+.stButton > button, .stDownloadButton > button {{
     background: transparent;
-    border: 1px solid #1a6fc4;
-    color: #4da3ff;
+    border: 1px solid {THEME['accent_border']};
+    color: {THEME['accent']};
     font-family: 'Rajdhani', sans-serif;
     letter-spacing: 0.08em;
     transition: all 0.2s;
-}
-.stButton > button:hover, .stDownloadButton > button:hover {
-    background: #1a6fc422;
-    border-color: #4da3ff;
-}
-.stTabs [data-baseweb="tab-list"] {
+}}
+.stButton > button:hover, .stDownloadButton > button:hover {{
+    background: {THEME['accent_soft']};
+    border-color: {THEME['accent']};
+}}
+.stTabs [data-baseweb="tab-list"] {{
     gap: 4px;
-}
-.stTabs [data-baseweb="tab"] {
-    background-color: #0d1626;
-    border: 1px solid #1e3a5f;
+}}
+.stTabs [data-baseweb="tab"] {{
+    background-color: {THEME['card_bg']};
+    border: 1px solid {THEME['border_strong']};
     border-radius: 0;
     font-family: 'Rajdhani', sans-serif;
     letter-spacing: 0.1em;
-    color: #7a9cc0;
+    color: {THEME['text_secondary']};
     padding: 8px 20px;
-}
-.stTabs [aria-selected="true"] {
-    background-color: #1a6fc422 !important;
-    border-color: #4da3ff !important;
-    color: #4da3ff !important;
-}
-hr { border-color: #1e2d4a; }
-.param-grid {
+}}
+.stTabs [aria-selected="true"] {{
+    background-color: {THEME['accent_soft']} !important;
+    border-color: {THEME['accent']} !important;
+    color: {THEME['accent']} !important;
+}}
+hr {{ border-color: {THEME['border']}; }}
+.param-grid {{
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     gap: 2px;
-    background: #1e2d4a;
-    border: 2px solid #1e2d4a;
+    background: {THEME['border']};
+    border: 2px solid {THEME['border']};
     margin-bottom: 16px;
-}
-.param-cell {
-    background: #0d1626;
+}}
+.param-cell {{
+    background: {THEME['card_bg']};
     padding: 10px 14px;
     display: flex;
     justify-content: space-between;
     align-items: center;
-}
-.param-label {
+}}
+.param-label {{
     font-family: 'Noto Sans JP', sans-serif;
     font-size: 11px;
-    color: #7a9cc0;
+    color: {THEME['text_secondary']};
     letter-spacing: 0.05em;
-}
-.param-value {
+}}
+.param-value {{
     font-family: 'Rajdhani', sans-serif;
     font-size: 22px;
     font-weight: 700;
-}
-.param-value.high { color: #4da3ff; }
-.param-value.mid  { color: #e0e6f0; }
-.param-value.low  { color: #5a7a9a; }
-.param-value.none { color: #3a4a5a; }
-.rank-badge {
+}}
+.param-value.high {{ color: {THEME['accent']}; }}
+.param-value.mid  {{ color: {THEME['text_primary']}; }}
+.param-value.low  {{ color: {THEME['text_muted']}; }}
+.param-value.none {{ color: {THEME['text_faint']}; }}
+.rank-badge {{
     display: inline-block;
     font-family: 'Rajdhani', sans-serif;
     font-size: 13px;
@@ -107,76 +157,95 @@ hr { border-color: #1e2d4a; }
     padding: 2px 10px;
     border: 1px solid;
     letter-spacing: 0.1em;
-}
-.rank-S { color: #ffd700; border-color: #ffd700; }
-.rank-A { color: #4da3ff; border-color: #4da3ff; }
-.rank-B { color: #a0c4e8; border-color: #a0c4e8; }
-.rank-C { color: #7a9cc0; border-color: #7a9cc0; }
-.rank-D { color: #5a7a9a; border-color: #5a7a9a; }
-.rank-N { color: #3a4a5a; border-color: #3a4a5a; }
-.section-header {
+}}
+.rank-S {{ color: {THEME['gold']}; border-color: {THEME['gold']}; }}
+.rank-A {{ color: {THEME['accent']}; border-color: {THEME['accent']}; }}
+.rank-B {{ color: {THEME['text_secondary']}; border-color: {THEME['text_secondary']}; }}
+.rank-C {{ color: {THEME['warn']}; border-color: {THEME['warn']}; }}
+.rank-D {{ color: {THEME['danger']}; border-color: {THEME['danger']}; }}
+.rank-N {{ color: {THEME['text_faint']}; border-color: {THEME['text_faint']}; }}
+.section-header {{
     font-family: 'Rajdhani', sans-serif;
     font-size: 13px;
     font-weight: 700;
-    color: #4da3ff;
+    color: {THEME['accent']};
     letter-spacing: 0.2em;
     text-transform: uppercase;
-    border-bottom: 1px solid #1e3a5f;
+    border-bottom: 1px solid {THEME['border_strong']};
     padding-bottom: 4px;
     margin: 20px 0 12px;
-}
-.hero-title {
+}}
+.hero-title {{
     font-family: 'Rajdhani', sans-serif;
     font-size: 42px;
     font-weight: 700;
     letter-spacing: 0.15em;
-    color: #ffffff;
+    color: {THEME['white']};
     line-height: 1.1;
-}
-.hero-sub {
+}}
+.hero-sub {{
     font-family: 'Rajdhani', sans-serif;
     font-size: 13px;
     letter-spacing: 0.3em;
-    color: #4da3ff;
+    color: {THEME['accent']};
     margin-bottom: 32px;
-}
-.stat-box {
-    border: 1px solid #1e3a5f;
-    background: #0d1626;
+}}
+.stat-box {{
+    border: 1px solid {THEME['border_strong']};
+    background: {THEME['card_bg']};
     padding: 16px 20px;
     margin-bottom: 8px;
-}
-.stat-box-label {
+}}
+.stat-box-label {{
     font-size: 10px;
     letter-spacing: 0.2em;
-    color: #4da3ff;
+    color: {THEME['accent']};
     font-family: 'Rajdhani', sans-serif;
     text-transform: uppercase;
-}
-.stat-box-value {
+}}
+.stat-box-value {{
     font-size: 28px;
     font-weight: 700;
     font-family: 'Rajdhani', sans-serif;
-    color: #ffffff;
-}
-.null-warning {
-    background: #1a1a2e;
-    border-left: 3px solid #1a6fc4;
+    color: {THEME['white']};
+}}
+.null-warning {{
+    background: {THEME['card_bg_alt']};
+    border-left: 3px solid {THEME['accent_border']};
     padding: 8px 14px;
     font-family: 'Noto Sans JP', sans-serif;
     font-size: 12px;
-    color: #7a9cc0;
+    color: {THEME['text_secondary']};
     margin-bottom: 12px;
-}
-.progress-info {
+}}
+.progress-info {{
     font-family: 'Rajdhani', sans-serif;
     font-size: 12px;
-    color: #4da3ff;
+    color: {THEME['accent']};
     letter-spacing: 0.1em;
     margin-bottom: 8px;
-}
+}}
+#theme-toggle-anchor + div[data-testid="stButton"] {{
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    z-index: 9999;
+}}
+#theme-toggle-anchor + div[data-testid="stButton"] button {{
+    border-radius: 20px;
+    padding: 8px 20px;
+    box-shadow: {THEME['shadow']};
+    background: {THEME['card_bg']};
+}}
 </style>
 """, unsafe_allow_html=True)
+
+# ── ダーク／ライト切替ボタン（右下固定） ─────────────
+st.markdown('<div id="theme-toggle-anchor"></div>', unsafe_allow_html=True)
+toggle_label = "LIGHT MODE" if st.session_state.theme == "dark" else "DARK MODE"
+if st.button(toggle_label, key="theme_toggle_btn"):
+    st.session_state.theme = "light" if st.session_state.theme == "dark" else "dark"
+    st.rerun()
 
 # ── サイドバー ──────────────────────────────────────
 with st.sidebar:
@@ -188,9 +257,9 @@ with st.sidebar:
         file_name="sample_data.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
-    st.markdown("""
+    st.markdown(f"""
     <div style="font-family:'Noto Sans JP',sans-serif; font-size:11px;
-                color:#5a7a9a; margin:8px 0 4px; line-height:1.8;">
+                color:{THEME['text_muted']}; margin:8px 0 4px; line-height:1.8;">
         大きいファイルは自動で分割して<br>読み込みます（xlsx / csv対応）
     </div>
     """, unsafe_allow_html=True)
@@ -226,24 +295,24 @@ with st.sidebar:
             size_kb = round(f.size / 1024, 1)
             st.markdown(f"""
             <div style="font-family:'Rajdhani',sans-serif; font-size:12px;
-                        color:#7a9cc0; padding:3px 0;
-                        border-bottom:1px solid #1e2d4a;">
-                <span style="color:#4da3ff;">{i+1}/{len(uploaded_files)}</span>
+                        color:{THEME['text_secondary']}; padding:3px 0;
+                        border-bottom:1px solid {THEME['border']};">
+                <span style="color:{THEME['accent']};">{i+1}/{len(uploaded_files)}</span>
                 　{f.name}<br>
-                <span style="font-size:10px; color:#3a5a7a;">{size_kb} KB</span>
+                <span style="font-size:10px; color:{THEME['text_faint']};">{size_kb} KB</span>
             </div>""", unsafe_allow_html=True)
     else:
         name_col = st.text_input("選手名の列名", value="選手名")
 
 # ── タイトル画面 ────────────────────────────────────
 if not uploaded_files:
-    st.markdown("""
+    st.markdown(f"""
     <div style="padding: 60px 0 40px;">
         <div class="hero-sub">SPORTS PERFORMANCE ANALYTICS</div>
         <div class="hero-title">ATHLETE<br>ANALYSIS<br>SYSTEM</div>
-        <div style="width:60px; height:3px; background:#1a6fc4; margin:24px 0;"></div>
+        <div style="width:60px; height:3px; background:{THEME['accent_border']}; margin:24px 0;"></div>
         <div style="font-family:'Noto Sans JP',sans-serif; font-size:13px;
-                    color:#5a7a9a; line-height:2;">
+                    color:{THEME['text_muted']}; line-height:2;">
             IoTデバイスから出力された体力測定データを解析し、<br>
             選手個別のパフォーマンスプロファイルを生成します。
         </div>
@@ -270,9 +339,9 @@ if not uploaded_files:
             <div class="stat-box-value">AI<br>TRAINER</div>
         </div>""", unsafe_allow_html=True)
 
-    st.markdown("""
+    st.markdown(f"""
     <div style="margin-top:48px; font-family:'Rajdhani',sans-serif;
-                font-size:12px; color:#2a4a6a; letter-spacing:0.2em;">
+                font-size:12px; color:{THEME['text_faint']}; letter-spacing:0.2em;">
         LOAD EXCEL FILE TO BEGIN ANALYSIS
     </div>
     """, unsafe_allow_html=True)
@@ -407,9 +476,9 @@ def calc_z(col_name: str, val) -> float:
 # ── グループ別ランキング（AIタイプ分類／fragmentで独立させ、部分再実行にする） ──
 @st.fragment
 def render_type_group_ranking(df, name_col, selected_metrics, selected_player):
-    st.markdown("""
+    st.markdown(f"""
     <div style="font-family:'Noto Sans JP',sans-serif; font-size:11px;
-                color:#7a9cc0; margin-bottom:8px;">
+                color:{THEME['text_secondary']}; margin-bottom:8px;">
         選択中の測定項目全体の傾向をもとに、選手を自動でいくつかの
         タイプにグループ分けします（AIによるクラスタリング）。
     </div>
@@ -446,12 +515,12 @@ def render_type_group_ranking(df, name_col, selected_metrics, selected_player):
         my_cluster = int(summary_df.iloc[0]["クラスタ"])
 
     st.markdown(f"""
-    <div style="border-top:2px solid #4da3ff; padding:10px 0; margin-bottom:12px;">
-        <span style="font-family:'Rajdhani',sans-serif; font-size:13px; color:#4da3ff;">
+    <div style="border-top:2px solid {THEME['accent']}; padding:10px 0; margin-bottom:12px;">
+        <span style="font-family:'Rajdhani',sans-serif; font-size:13px; color:{THEME['accent']};">
             {str(selected_player).upper()} のタイプ：
         </span>
         <span style="font-family:'Rajdhani',sans-serif; font-size:22px;
-                    font-weight:700; color:#fff;">
+                    font-weight:700; color:{THEME['white']};">
             TYPE {my_cluster}
         </span>
     </div>
@@ -460,7 +529,7 @@ def render_type_group_ranking(df, name_col, selected_metrics, selected_player):
     summary_html = ""
     for _, row in summary_df.iterrows():
         is_my_type = int(row["クラスタ"]) == my_cluster
-        highlight = "border-left:3px solid #4da3ff;" if is_my_type else ""
+        highlight = f"border-left:3px solid {THEME['accent']};" if is_my_type else ""
         summary_html += f"""
         <div class="param-cell" style="{highlight} margin-bottom:2px;">
             <span class="param-label">TYPE {row['クラスタ']}</span>
@@ -488,15 +557,15 @@ def render_type_group_ranking(df, name_col, selected_metrics, selected_player):
     my_type_rank = get_player_rank(type_rank_df, "名前", selected_player)
     if my_type_rank:
         st.markdown(f"""
-        <div style="border-top:2px solid #4da3ff; padding:10px 0; margin-bottom:12px;">
-            <span style="font-family:'Rajdhani',sans-serif; font-size:13px; color:#4da3ff;">
+        <div style="border-top:2px solid {THEME['accent']}; padding:10px 0; margin-bottom:12px;">
+            <span style="font-family:'Rajdhani',sans-serif; font-size:13px; color:{THEME['accent']};">
                 {str(selected_player).upper()} の順位（TYPE {rank_cluster_choice}内）：
             </span>
             <span style="font-family:'Rajdhani',sans-serif; font-size:22px;
-                        font-weight:700; color:#fff;">
+                        font-weight:700; color:{THEME['white']};">
                 {my_type_rank['順位']} 位
             </span>
-            <span style="font-family:'Rajdhani',sans-serif; font-size:12px; color:#7a9cc0;">
+            <span style="font-family:'Rajdhani',sans-serif; font-size:12px; color:{THEME['text_secondary']};">
                 / {len(type_rank_df)}人中
             </span>
         </div>
@@ -505,7 +574,7 @@ def render_type_group_ranking(df, name_col, selected_metrics, selected_player):
     rows_html = ""
     for _, row in type_rank_df.iterrows():
         is_me = str(row["名前"]).strip() == str(selected_player).strip()
-        highlight = "border-left:3px solid #4da3ff;" if is_me else ""
+        highlight = f"border-left:3px solid {THEME['accent']};" if is_me else ""
         rows_html += f"""
         <div class="param-cell" style="{highlight} margin-bottom:2px;">
             <span class="param-label">
@@ -520,12 +589,12 @@ def render_type_group_ranking(df, name_col, selected_metrics, selected_player):
 
 # ── 選手ヘッダー ────────────────────────────────────
 st.markdown(f"""
-<div style="border-top:2px solid #1a6fc4; border-bottom:1px solid #1e2d4a;
+<div style="border-top:2px solid {THEME['accent_border']}; border-bottom:1px solid {THEME['border']};
             padding:16px 0; margin:24px 0 8px;">
     <div style="font-family:'Rajdhani',sans-serif; font-size:11px;
-                color:#4da3ff; letter-spacing:0.3em;">PLAYER PROFILE</div>
+                color:{THEME['accent']}; letter-spacing:0.3em;">PLAYER PROFILE</div>
     <div style="font-family:'Rajdhani',sans-serif; font-size:32px;
-                font-weight:700; color:#fff; letter-spacing:0.1em;">
+                font-weight:700; color:{THEME['white']}; letter-spacing:0.1em;">
         {str(selected_player).upper()}
     </div>
 </div>
@@ -594,7 +663,7 @@ with tab_result:
             with col_widget:
                 st.markdown(f"""
                 <div style="font-family:'Rajdhani',sans-serif; font-size:12px;
-                            color:#4da3ff; letter-spacing:0.1em; margin-bottom:4px;">
+                            color:{THEME['accent']}; letter-spacing:0.1em; margin-bottom:4px;">
                     UNIT : {unit}
                 </div>
                 """, unsafe_allow_html=True)
@@ -624,34 +693,34 @@ with tab_result:
                 group_fig.add_trace(go.Scatterpolar(
                     r=t_vals, theta=categories, fill="toself",
                     name="TEAM AVG",
-                    line=dict(color="#1e3a5f", width=1),
-                    fillcolor="rgba(30,58,95,0.4)"
+                    line=dict(color=THEME['border_strong'], width=1),
+                    fillcolor=THEME['accent_soft']
                 ))
                 group_fig.add_trace(go.Scatterpolar(
                     r=p_vals, theta=categories, fill="toself",
                     name=str(selected_player).upper(),
-                    line=dict(color="#4da3ff", width=2),
-                    fillcolor="rgba(77,163,255,0.15)"
+                    line=dict(color=THEME['accent'], width=2),
+                    fillcolor=THEME['accent_soft']
                 ))
                 group_fig.update_layout(
                     polar=dict(
-                        bgcolor="#0a0e1a",
+                        bgcolor=THEME['bg'],
                         radialaxis=dict(
                             visible=True, range=[0, 100],
-                            gridcolor="#1e2d4a", linecolor="#1e2d4a",
-                            tickfont=dict(color="#2a4a6a", size=8),
+                            gridcolor=THEME['border'], linecolor=THEME['border'],
+                            tickfont=dict(color=THEME['text_faint'], size=8),
                             tickvals=[25, 50, 75, 100]
                         ),
                         angularaxis=dict(
-                            gridcolor="#1e2d4a", linecolor="#1e2d4a",
-                            tickfont=dict(color="#7a9cc0", size=10,
+                            gridcolor=THEME['border'], linecolor=THEME['border'],
+                            tickfont=dict(color=THEME['text_secondary'], size=10,
                                           family="Noto Sans JP")
                         )
                     ),
-                    paper_bgcolor="#0a0e1a",
-                    plot_bgcolor="#0a0e1a",
-                    font=dict(color="#e0e6f0", family="Rajdhani"),
-                    legend=dict(bgcolor="#0d1626", bordercolor="#1e2d4a",
+                    paper_bgcolor=THEME['bg'],
+                    plot_bgcolor=THEME['bg'],
+                    font=dict(color=THEME['text_primary'], family="Rajdhani"),
+                    legend=dict(bgcolor=THEME['card_bg'], bordercolor=THEME['border'],
                                 borderwidth=1, font=dict(size=9)),
                     height=320,
                     margin=dict(t=20, b=20, l=20, r=20)
@@ -729,11 +798,11 @@ with tab_training:
     with tab_daily:
         st.markdown(f"""
         <div style="font-family:'Rajdhani',sans-serif; font-size:13px;
-                    color:#4da3ff; letter-spacing:0.1em; margin-bottom:8px;">
+                    color:{THEME['accent']}; letter-spacing:0.1em; margin-bottom:8px;">
             {daily_training['date']} &nbsp;|&nbsp; TOTAL : {daily_training['total_duration']} MIN
         </div>
         <div style="font-family:'Noto Sans JP',sans-serif; font-size:12px;
-                    color:#7a9cc0; margin-bottom:16px;">
+                    color:{THEME['text_secondary']}; margin-bottom:16px;">
             {daily_training['summary']}
         </div>
         """, unsafe_allow_html=True)
@@ -743,7 +812,7 @@ with tab_training:
             <div class="param-cell" style="margin-bottom:4px;">
                 <div>
                     <span class="param-label">{block['target_metric']}（{block['reason']}）</span><br>
-                    <span style="font-family:'Noto Sans JP',sans-serif; font-size:13px; color:#e0e6f0;">
+                    <span style="font-family:'Noto Sans JP',sans-serif; font-size:13px; color:{THEME['text_primary']};">
                         {block['menu_name']} — {block['detail']}
                     </span>
                 </div>
@@ -757,7 +826,7 @@ with tab_training:
             <div class="param-cell" style="margin-bottom:4px;">
                 <div>
                     <span class="param-label">{day['date']}（{day['weekday']}）</span><br>
-                    <span style="font-family:'Noto Sans JP',sans-serif; font-size:13px; color:#e0e6f0;">
+                    <span style="font-family:'Noto Sans JP',sans-serif; font-size:13px; color:{THEME['text_primary']};">
                         {day['menu_name']} — {day['detail']}（対象：{day['target_metric']}）
                     </span>
                 </div>
@@ -769,9 +838,9 @@ with tab_training:
     st.markdown('<div class="section-header">AI TRAINER — 種目別アドバイス</div>',
                 unsafe_allow_html=True)
 
-    st.markdown("""
+    st.markdown(f"""
     <div style="font-family:'Noto Sans JP',sans-serif; font-size:12px;
-                color:#7a9cc0; margin-bottom:12px;">
+                color:{THEME['text_secondary']}; margin-bottom:12px;">
         気になる種目のボタンを押すと、AIトレーナーがその種目について
         アドバイスと今後のトレーニングの方向性をコメントします。
     </div>
@@ -805,10 +874,10 @@ with tab_training:
             metric_comment = generate_metric_coach_comment(comment_source)
 
             st.markdown(f"""
-            <div style="background:#0d1626; border-left:3px solid #4da3ff;
+            <div style="background:{THEME['card_bg']}; border-left:3px solid {THEME['accent']};
                         padding:16px 20px; margin-top:12px;
                         font-family:'Noto Sans JP',sans-serif;
-                        font-size:13px; color:#c0d0e0; line-height:1.9;
+                        font-size:13px; color:{THEME['text_primary']}; line-height:1.9;
                         white-space:pre-wrap;">
 {metric_comment['コメント']}
             </div>
@@ -879,15 +948,15 @@ with tab_ranking:
         my_rank = get_player_rank(metric_rank_df, "名前", selected_player)
         if my_rank:
             st.markdown(f"""
-            <div style="border-top:2px solid #4da3ff; padding:10px 0; margin-bottom:12px;">
-                <span style="font-family:'Rajdhani',sans-serif; font-size:13px; color:#4da3ff;">
+            <div style="border-top:2px solid {THEME['accent']}; padding:10px 0; margin-bottom:12px;">
+                <span style="font-family:'Rajdhani',sans-serif; font-size:13px; color:{THEME['accent']};">
                     {str(selected_player).upper()} の順位：
                 </span>
                 <span style="font-family:'Rajdhani',sans-serif; font-size:22px;
-                            font-weight:700; color:#fff;">
+                            font-weight:700; color:{THEME['white']};">
                     {my_rank['順位']} 位
                 </span>
-                <span style="font-family:'Rajdhani',sans-serif; font-size:12px; color:#7a9cc0;">
+                <span style="font-family:'Rajdhani',sans-serif; font-size:12px; color:{THEME['text_secondary']};">
                     / {len(metric_rank_df)}人中
                 </span>
             </div>
@@ -896,7 +965,7 @@ with tab_ranking:
         rows_html = ""
         for _, row in metric_rank_df.iterrows():
             is_me = str(row["名前"]).strip() == str(selected_player).strip()
-            highlight = "border-left:3px solid #4da3ff;" if is_me else ""
+            highlight = f"border-left:3px solid {THEME['accent']};" if is_me else ""
             rows_html += f"""
             <div class="param-cell" style="{highlight} margin-bottom:2px;">
                 <span class="param-label">
@@ -920,9 +989,9 @@ with tab_ranking:
     elif ranking_view == "総合":
         st.markdown('<div class="section-header">総合ランキング</div>',
                     unsafe_allow_html=True)
-        st.markdown("""
+        st.markdown(f"""
         <div style="font-family:'Noto Sans JP',sans-serif; font-size:11px;
-                    color:#7a9cc0; margin-bottom:8px;">
+                    color:{THEME['text_secondary']}; margin-bottom:8px;">
             選択中の全種目の平均Zスコアで算出した総合順位です。
         </div>
         """, unsafe_allow_html=True)
@@ -932,15 +1001,15 @@ with tab_ranking:
         my_overall_rank = get_player_rank(overall_rank_df, "名前", selected_player)
         if my_overall_rank:
             st.markdown(f"""
-            <div style="border-top:2px solid #ffd700; padding:10px 0; margin-bottom:12px;">
-                <span style="font-family:'Rajdhani',sans-serif; font-size:13px; color:#ffd700;">
+            <div style="border-top:2px solid {THEME['gold']}; padding:10px 0; margin-bottom:12px;">
+                <span style="font-family:'Rajdhani',sans-serif; font-size:13px; color:{THEME['gold']};">
                     {str(selected_player).upper()} の総合順位：
                 </span>
                 <span style="font-family:'Rajdhani',sans-serif; font-size:22px;
-                            font-weight:700; color:#fff;">
+                            font-weight:700; color:{THEME['white']};">
                     {my_overall_rank['順位']} 位
                 </span>
-                <span style="font-family:'Rajdhani',sans-serif; font-size:12px; color:#7a9cc0;">
+                <span style="font-family:'Rajdhani',sans-serif; font-size:12px; color:{THEME['text_secondary']};">
                     / {len(overall_rank_df)}人中
                 </span>
             </div>
@@ -949,7 +1018,7 @@ with tab_ranking:
         rows_html = ""
         for _, row in overall_rank_df.iterrows():
             is_me = str(row["名前"]).strip() == str(selected_player).strip()
-            highlight = "border-left:3px solid #ffd700;" if is_me else ""
+            highlight = f"border-left:3px solid {THEME['gold']};" if is_me else ""
             rank_cls = "S" if row["順位"] == 1 else ("A" if row["順位"] <= 3 else "B")
             rows_html += f"""
             <div class="param-cell" style="{highlight} margin-bottom:2px;">
@@ -971,15 +1040,15 @@ with tab_rival:
 
     if rival_info.get("rival"):
         st.markdown(f"""
-        <div style="border-top:2px solid #ff4d4d; padding:12px 0;">
+        <div style="border-top:2px solid {THEME['rival']}; padding:12px 0;">
             <div style="font-family:'Rajdhani',sans-serif; font-size:11px;
-                        color:#ff4d4d; letter-spacing:0.2em;">RIVAL DETECTED</div>
+                        color:{THEME['rival']}; letter-spacing:0.2em;">RIVAL DETECTED</div>
             <div style="font-family:'Rajdhani',sans-serif; font-size:24px;
-                        font-weight:700; color:#fff;">
+                        font-weight:700; color:{THEME['white']};">
                 {rival_info['rival']}
             </div>
             <div style="font-family:'Noto Sans JP',sans-serif; font-size:11px;
-                        color:#7a9cc0; margin-top:4px;">
+                        color:{THEME['text_secondary']}; margin-top:4px;">
                 類似する課題：{', '.join(rival_info['weak_metrics'])}
                 （距離スコア：{rival_info['distance']}）
             </div>
@@ -996,22 +1065,22 @@ with tab_rival:
             with c1:
                 st.markdown(f"""
                 <div style="font-family:'Noto Sans JP',sans-serif; font-size:12px;
-                            color:#7a9cc0; padding:6px 0;">{comp['指標']}</div>
+                            color:{THEME['text_secondary']}; padding:6px 0;">{comp['指標']}</div>
                 """, unsafe_allow_html=True)
             with c2:
                 st.markdown(f"""
                 <div style="font-family:'Rajdhani',sans-serif; font-size:14px;
-                            color:#4da3ff; padding:6px 0;">{comp['自分']}</div>
+                            color:{THEME['accent']}; padding:6px 0;">{comp['自分']}</div>
                 """, unsafe_allow_html=True)
             with c3:
                 st.markdown(f"""
                 <div style="font-family:'Rajdhani',sans-serif; font-size:14px;
-                            color:#ff7a7a; padding:6px 0;">{comp['ライバル']}</div>
+                            color:{THEME['rival']}; padding:6px 0;">{comp['ライバル']}</div>
                 """, unsafe_allow_html=True)
             with c4:
                 st.markdown(f"""
                 <div style="font-family:'Rajdhani',sans-serif; font-size:14px;
-                            color:#e0e6f0; padding:6px 0;">{comp['差']}</div>
+                            color:{THEME['text_primary']}; padding:6px 0;">{comp['差']}</div>
                 """, unsafe_allow_html=True)
     else:
         st.markdown("""
