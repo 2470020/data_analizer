@@ -33,6 +33,13 @@ st.set_page_config(
 if "theme" not in st.session_state:
     st.session_state.theme = "dark"
 
+def _toggle_theme():
+    """ボタンのon_clickコールバックとして呼ばれる。
+    st.rerun()を使わずにここでsession_stateを更新することで、
+    ボタンクリックによる自然な1回のrerunだけで反映され、
+    二重rerunによるDOM差分競合（removeChildエラー）を避けられる。"""
+    st.session_state.theme = "light" if st.session_state.theme == "dark" else "dark"
+
 DARK_THEME = {
     "bg":             "#1a2028",  # 旧: #0a0e1a（純黒に近いネイビー）→ チャコールグレーへ
     "sidebar_bg":     "#20262f",
@@ -243,9 +250,7 @@ hr {{ border-color: {THEME['border']}; }}
 # ── ダーク／ライト切替ボタン（右下固定） ─────────────
 st.markdown('<div id="theme-toggle-anchor"></div>', unsafe_allow_html=True)
 toggle_label = "LIGHT MODE" if st.session_state.theme == "dark" else "DARK MODE"
-if st.button(toggle_label, key="theme_toggle_btn"):
-    st.session_state.theme = "light" if st.session_state.theme == "dark" else "dark"
-    st.rerun()
+st.button(toggle_label, key="theme_toggle_btn", on_click=_toggle_theme)
 
 # ── サイドバー ──────────────────────────────────────
 with st.sidebar:
