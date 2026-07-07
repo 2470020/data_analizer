@@ -244,6 +244,45 @@ hr {{ border-color: {THEME['border']}; }}
     box-shadow: {THEME['shadow']};
     background: {THEME['card_bg']};
 }}
+
+/* ── ネイティブウィジェット（selectbox / multiselect / タグ / input）のテーマ対応 ── */
+[data-baseweb="select"] > div,
+[data-baseweb="input"] {{
+    background-color: {THEME['card_bg']} !important;
+    border-color: {THEME['border_strong']} !important;
+}}
+[data-baseweb="select"] > div *,
+[data-baseweb="input"] input {{
+    color: {THEME['text_primary']} !important;
+}}
+[data-baseweb="tag"] {{
+    background-color: {THEME['accent_border']} !important;
+    border-color: {THEME['accent_border']} !important;
+}}
+[data-baseweb="tag"] span {{
+    color: {THEME['white']} !important;
+}}
+[data-baseweb="tag"] svg {{
+    fill: {THEME['white']} !important;
+}}
+div[role="listbox"], ul[data-testid="stSelectboxVirtualDropdown"] {{
+    background-color: {THEME['card_bg']} !important;
+}}
+li[role="option"] {{
+    background-color: {THEME['card_bg']} !important;
+    color: {THEME['text_primary']} !important;
+}}
+li[role="option"]:hover, li[aria-selected="true"] {{
+    background-color: {THEME['accent_soft']} !important;
+}}
+.stSelectbox label, .stMultiSelect label, .stTextInput label,
+.stNumberInput label, .stSlider label, .stRadio label,
+.stFileUploader label, .stSelectSlider label {{
+    color: {THEME['text_secondary']} !important;
+}}
+.stRadio div[role="radiogroup"] label span {{
+    color: {THEME['text_primary']} !important;
+}}
 </style>
 """, unsafe_allow_html=True)
 
