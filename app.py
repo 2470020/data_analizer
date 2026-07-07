@@ -405,7 +405,70 @@ def calc_z(col_name: str, val) -> float:
     mean_val = float(team_stats.loc[col_name, "チーム平均"])
     return (float(val) - mean_val) / std_val if std_val > 0 else 0.0
 
-# ── 「似たタイプ」ランキング（fragmentで独立させ、部分再実行にする） ──
+# ── グループ別ランキング（fragmentで独立させ、部分再実行にする） ──
+@st.fragment
+def render_unit_group_ranking(df, name_col, selected_metrics, selected_player):
+    metric_groups = group_metrics_by_unit(selected_metrics)
+    group_names   = list(metric_groups.keys())
+
+    rank_group_choice = st.selectbox(
+        "ランキングを見るグループ（単位）を選択",
+        options=group_names,
+        key="rank_group_select"
+    )
+
+    cols_in_group = metric_groups[rank_group_choice]
+    st.markdown(f"""
+    <div style="font-family:'Noto Sans JP',sans-serif; font-size:11px;
+                color:#7a9cc0; margin-bottom:8px;">
+        対象種目：{', '.join(cols_in_group)}
+    </div>
+    """, unsafe_allow_html=True)
+
+    if len(cols_in_group) < 2:
+        st.markdown("""
+        <div class="null-warning">
+            このグループは種目が1つのため、種目別ランキングをご覧ください。
+        </div>
+        """, unsafe_allow_html=True)
+        return
+
+    group_rank_df = calc_group_ranking(df, name_col, cols_in_group)
+
+    my_group_rank = get_player_rank(group_rank_df, "名前", selected_player)
+    if my_group_rank:
+        st.markdown(f"""
+        <div style="border-top:2px solid #4da3ff; padding:10px 0; margin-bottom:12px;">
+            <span style="font-family:'Rajdhani',sans-serif; font-size:13px; color:#4da3ff;">
+                {str(selected_player).upper()} の順位：
+            </span>
+            <span style="font-family:'Rajdhani',sans-serif; font-size:22px;
+                        font-weight:700; color:#fff;">
+                {my_group_rank['順位']} 位
+            </span>
+            <span style="font-family:'Rajdhani',sans-serif; font-size:12px; color:#7a9cc0;">
+                / {len(group_rank_df)}人中
+            </span>
+        </div>
+        """, unsafe_allow_html=True)
+
+    rows_html = ""
+    for _, row in group_rank_df.iterrows():
+        is_me = str(row["名前"]).strip() == str(selected_player).strip()
+        highlight = "border-left:3px solid #4da3ff;" if is_me else ""
+        rows_html += f"""
+        <div class="param-cell" style="{highlight} margin-bottom:2px;">
+            <span class="param-label">
+                <span class="rank-badge rank-{'S' if row['順位']==1 else ('A' if row['順位']<=3 else 'B')}">
+                    {row['順位']}
+                </span>
+                &nbsp;{row['名前']}
+            </span>
+            <span class="param-value mid">{round(row['平均Zスコア'], 2)}</span>
+        </div>"""
+    st.markdown(rows_html, unsafe_allow_html=True)
+
+
 @st.fragment
 def render_type_group_ranking(df, name_col, selected_metrics, selected_player):
     st.markdown("""
@@ -925,68 +988,8 @@ with tab_ranking:
         st.markdown("<div style='margin-bottom:8px;'></div>",
                     unsafe_allow_html=True)
 
-        # ── 測定単位でのグループランキング ──────
         if group_mode == "測定単位":
-            metric_groups = group_metrics_by_unit(selected_metrics)
-            group_names   = list(metric_groups.keys())
-
-            rank_group_choice = st.selectbox(
-                "ランキングを見るグループ（単位）を選択",
-                options=group_names,
-                key="rank_group_select"
-            )
-
-            cols_in_group = metric_groups[rank_group_choice]
-            st.markdown(f"""
-            <div style="font-family:'Noto Sans JP',sans-serif; font-size:11px;
-                        color:#7a9cc0; margin-bottom:8px;">
-                対象種目：{', '.join(cols_in_group)}
-            </div>
-            """, unsafe_allow_html=True)
-
-            if len(cols_in_group) < 2:
-                st.markdown("""
-                <div class="null-warning">
-                    このグループは種目が1つのため、種目別ランキングをご覧ください。
-                </div>
-                """, unsafe_allow_html=True)
-            else:
-                group_rank_df = calc_group_ranking(df, name_col, cols_in_group)
-
-                my_group_rank = get_player_rank(group_rank_df, "名前", selected_player)
-                if my_group_rank:
-                    st.markdown(f"""
-                    <div style="border-top:2px solid #4da3ff; padding:10px 0; margin-bottom:12px;">
-                        <span style="font-family:'Rajdhani',sans-serif; font-size:13px; color:#4da3ff;">
-                            {str(selected_player).upper()} の順位：
-                        </span>
-                        <span style="font-family:'Rajdhani',sans-serif; font-size:22px;
-                                    font-weight:700; color:#fff;">
-                            {my_group_rank['順位']} 位
-                        </span>
-                        <span style="font-family:'Rajdhani',sans-serif; font-size:12px; color:#7a9cc0;">
-                            / {len(group_rank_df)}人中
-                        </span>
-                    </div>
-                    """, unsafe_allow_html=True)
-
-                rows_html = ""
-                for _, row in group_rank_df.iterrows():
-                    is_me = str(row["名前"]).strip() == str(selected_player).strip()
-                    highlight = "border-left:3px solid #4da3ff;" if is_me else ""
-                    rows_html += f"""
-                    <div class="param-cell" style="{highlight} margin-bottom:2px;">
-                        <span class="param-label">
-                            <span class="rank-badge rank-{'S' if row['順位']==1 else ('A' if row['順位']<=3 else 'B')}">
-                                {row['順位']}
-                            </span>
-                            &nbsp;{row['名前']}
-                        </span>
-                        <span class="param-value mid">{round(row['平均Zスコア'], 2)}</span>
-                    </div>"""
-                st.markdown(rows_html, unsafe_allow_html=True)
-
-        # ── 似たタイプ（クラスタ）でのグループランキング ──
+            render_unit_group_ranking(df, name_col, selected_metrics, selected_player)
         else:
             render_type_group_ranking(df, name_col, selected_metrics, selected_player)
 
