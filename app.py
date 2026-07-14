@@ -1,18 +1,19 @@
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
+import plotly.express as px
 import json
 import numpy as np
 from modules.data_loader import (load_excel, get_column_names,
                                   guess_name_column, get_player_list,
                                   get_metric_columns, create_sample_excel,
-                                  clean_dataframe)
+                                  clean_dataframe, clean_name_column)
 from modules.analysis import (calc_team_stats, get_player_data,
-                               normalize_for_radar, group_metrics_by_unit)
+                               normalize_for_radar, group_metrics_by_unit,
+                               calc_z_scores)
 from modules.advisor import generate_advice
 from modules.training_generator import (generate_daily_training,
                                           generate_weekly_plan)
-from modules.rival_finder import find_rival, compare_with_rival
 from modules.ranking import (calc_metric_ranking, calc_overall_ranking,
                               get_player_rank, calc_type_group_ranking)
 from modules.clustering import cluster_players_by_type, get_cluster_summary
@@ -59,7 +60,6 @@ DARK_THEME = {
     "gold":           "#ffd700",
     "warn":           "#ff9a4d",
     "danger":         "#ff6b6b",
-    "rival":          "#ff7a7a",
     "shadow":         "0 2px 12px rgba(0,0,0,0.35)",
 }
 
@@ -81,7 +81,6 @@ LIGHT_THEME = {
     "gold":           "#8a6d00",
     "warn":           "#a85a10",
     "danger":         "#b23a3a",
-    "rival":          "#b23a3a",
     "shadow":         "0 2px 10px rgba(20,30,50,0.12)",
 }
 
@@ -232,6 +231,13 @@ hr {{ border-color: {THEME['border']}; }}
     color: {THEME['accent']};
     letter-spacing: 0.1em;
     margin-bottom: 8px;
+}}
+.cal-guide-box {{
+    background: linear-gradient(135deg, {THEME['card_bg']} 0%, {THEME['card_bg_alt']} 100%);
+    border: 1px solid {THEME['border_strong']};
+    border-left: 4px solid {THEME['accent_border']};
+    padding: 20px 24px;
+    margin: 8px 0;
 }}
 #theme-toggle-anchor + div[data-testid="stButton"] {{
     position: fixed;
@@ -425,6 +431,11 @@ df = pd.concat(dfs, ignore_index=True)
 if name_col not in df.columns:
     st.error(f"列「{name_col}」が見つかりません。サイドバーで列を確認してください。")
     st.stop()
+
+# 選手名の表記ゆれ（全角/半角スペースの重複など）をクレンジング。
+# これを重複チェックより前に行うことで、表記ゆれによる名前の不一致
+# （ライバル検索・ランキングでのIndexErrorの原因）を防ぐ。
+df = clean_name_column(df, name_col)
 
 all_metric_cols = get_metric_columns(df, name_col)
 
@@ -646,24 +657,14 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # ── 各ページで共通して使うデータを先に計算 ──────────
-weak_metric_names = [
-    item["指標"] for item in advice_list
-    if item["判定"] in ("要強化", "重点課題")
-]
-
-rival_info = find_rival(
-    df, team_stats, selected_player, name_col,
-    selected_metrics, weak_metric_names
-)
-
 daily_training = generate_daily_training(advice_list)
 weekly_plan    = generate_weekly_plan(advice_list)
 coach_report   = generate_coach_report(
-    str(selected_player), advice_list, rival_info, daily_training
+    str(selected_player), advice_list, {}, daily_training
 )
 
-tab_result, tab_training, tab_ranking, tab_rival, tab_calendar = st.tabs(
-    ["分析結果", "トレーニング", "ランキング", "ライバル", "カレンダー"]
+tab_result, tab_training, tab_ranking, tab_calendar = st.tabs(
+    ["分析結果", "トレーニング", "ランキング", "カレンダー"]
 )
 
 # ════════════════════════════════════════════════════
@@ -775,6 +776,101 @@ with tab_result:
                 )
                 st.plotly_chart(group_fig, use_container_width=True)
 
+    # ── 分析報告書（選択状態キープ） ────────────────
+    st.markdown('<div class="section-header">分析報告書</div>',
+                unsafe_allow_html=True)
+
+    if "selected_advice_filter" not in st.session_state:
+        st.session_state.selected_advice_filter = "全て表示"
+
+    filter_options = ["全て表示", "優秀", "平均以上", "要強化", "重点課題"]
+    selected_filter = st.radio(
+        "表示フィルター",
+        filter_options,
+        index=filter_options.index(st.session_state.selected_advice_filter),
+        horizontal=True,
+        label_visibility="collapsed",
+        key="advice_filter_radio"
+    )
+    st.session_state.selected_advice_filter = selected_filter
+
+    report_html = ""
+    for item in advice_list:
+        if selected_filter != "全て表示" and item["判定"] != selected_filter:
+            continue
+        col_name = item["指標"]
+        z        = calc_z(col_name, item["選手値"])
+        rank     = z_to_rank(z)
+
+        report_html += f"""
+        <div style="display:grid; grid-template-columns:2fr 1fr 4fr;
+                    gap:4px; border-bottom:1px solid {THEME['border']}; padding:4px 0;">
+            <div style="font-family:'Noto Sans JP',sans-serif;
+                        font-size:12px; color:{THEME['text_secondary']}; padding:6px 0;">
+                {col_name}
+            </div>
+            <div style="padding:4px 0;">
+                <span class="rank-badge rank-{rank}">{rank}</span>
+            </div>
+            <div style="font-family:'Noto Sans JP',sans-serif;
+                        font-size:12px; color:{THEME['text_muted']}; padding:6px 0;">
+                {item["コメント"]}
+            </div>
+        </div>"""
+
+    if report_html:
+        st.markdown(report_html, unsafe_allow_html=True)
+    else:
+        st.info("該当する項目がありません。")
+
+    # ── プレイヤー分布マップ（PCA散布図） ───────────
+    st.markdown('<div class="section-header">プレイヤー分布マップ</div>',
+                unsafe_allow_html=True)
+
+    if len(selected_metrics) >= 2:
+        try:
+            from sklearn.decomposition import PCA
+            z_all  = calc_z_scores(df, selected_metrics).fillna(0)
+            pca    = PCA(n_components=2)
+            coords = pca.fit_transform(z_all[selected_metrics].values)
+
+            scatter_df = pd.DataFrame({
+                "x":     coords[:, 0],
+                "y":     coords[:, 1],
+                "選手":  df[name_col].astype(str).values,
+                "タイプ": ["対象選手" if str(n) == str(selected_player)
+                          else "他の選手"
+                          for n in df[name_col]]
+            })
+
+            scatter_fig = px.scatter(
+                scatter_df, x="x", y="y",
+                color="タイプ", hover_name="選手",
+                color_discrete_map={
+                    "対象選手": THEME['danger'],
+                    "他の選手": THEME['accent']
+                },
+                title="選手分布マップ（PCA 2次元）"
+            )
+            scatter_fig.update_layout(
+                paper_bgcolor=THEME['bg'],
+                plot_bgcolor=THEME['card_bg'],
+                font=dict(color=THEME['text_primary'], family="Rajdhani"),
+                xaxis=dict(gridcolor=THEME['border'], zerolinecolor=THEME['border']),
+                yaxis=dict(gridcolor=THEME['border'], zerolinecolor=THEME['border']),
+                height=380
+            )
+            st.plotly_chart(scatter_fig, use_container_width=True)
+            st.markdown(f"""
+            <div style="font-family:'Noto Sans JP',sans-serif; font-size:11px;
+                        color:{THEME['text_muted']}; margin-top:-8px;">
+                ※ 近い位置にいる選手ほど、測定パターンが類似しています。
+            </div>""", unsafe_allow_html=True)
+        except ImportError:
+            st.info("散布図マップにはscikit-learnが必要です：pip install scikit-learn")
+    else:
+        st.info("散布図マップには2項目以上の選択が必要です。")
+
     # ── エクスポート ─────────────────────────────────
     st.markdown('<div class="section-header">EXPORT</div>',
                 unsafe_allow_html=True)
@@ -808,7 +904,6 @@ with tab_result:
             for col in selected_metrics
         },
         "advice":            advice_list,
-        "rival":             rival_info,
         "daily_training":    daily_training,
         "weekly_plan":       weekly_plan,
         "metric_comments":   metric_comments_export,
@@ -837,7 +932,7 @@ with tab_result:
             pdf_bytes = generate_player_pdf(
                 str(selected_player), advice_list,
                 daily_training, weekly_plan,
-                coach_report, rival_info
+                coach_report, {}
             )
             st.download_button(
                 "EXPORT PDF（選手カルテ）",
@@ -973,12 +1068,25 @@ with tab_calendar:
                 result = push_weekly_plan_to_calendar(weekly_plan)
                 st.info(f"成功：{result['success']} / 失敗：{result['failed']}")
     else:
-        st.markdown("""
-        <div class="null-warning">
-            <strong>未接続</strong> — Googleカレンダー連携は現在デモ版のため未実装です。<br>
-            <span style="font-size:11px;">
-                本実装にはGoogle Cloud ConsoleでのOAuth認証設定が必要になります。
-            </span>
+        st.markdown(f"""
+        <div class="cal-guide-box">
+            <div style="font-family:'Rajdhani',sans-serif; font-size:14px;
+                        color:{THEME['accent']}; letter-spacing:0.15em; margin-bottom:8px;">
+                CALENDAR SYNC — HOW IT WORKS
+            </div>
+            <div style="font-family:'Noto Sans JP',sans-serif; font-size:12px;
+                        color:{THEME['text_secondary']}; line-height:2.0;">
+                本システムでは <strong style="color:{THEME['text_primary']};">Google Calendar API</strong>
+                を設定することで、<br>
+                AIが生成したトレーニングメニューを選手のカレンダーに
+                <strong style="color:{THEME['text_primary']};">即時同期</strong>できます。<br><br>
+                ✅ 選手はスマホのGoogleカレンダーでメニューを確認<br>
+                ✅ コーチはワンクリックで週間プランを一括配信<br>
+                ✅ 測定データ更新のたびにメニューを自動更新<br><br>
+                <span style="color:{THEME['text_faint']}; font-size:11px;">
+                    ※ 本機能はGoogle Cloud ConsoleでのOAuth認証設定後に利用可能になります。
+                </span>
+            </div>
         </div>
         """, unsafe_allow_html=True)
         st.button("Googleアカウントで連携（準備中）", disabled=True)
@@ -1093,60 +1201,3 @@ with tab_ranking:
                 <span class="param-value mid">{round(row['総合Zスコア'], 2)}</span>
             </div>"""
         st.markdown(rows_html, unsafe_allow_html=True)
-
-# ════════════════════════════════════════════════════
-# タブ：ライバル
-# ════════════════════════════════════════════════════
-with tab_rival:
-
-    st.markdown('<div class="section-header">RIVAL PLAYER</div>',
-                unsafe_allow_html=True)
-
-    if rival_info.get("rival"):
-        st.markdown(f"""
-        <div style="border-top:2px solid {THEME['rival']}; padding:12px 0;">
-            <div style="font-family:'Rajdhani',sans-serif; font-size:11px;
-                        color:{THEME['rival']}; letter-spacing:0.2em;">RIVAL DETECTED</div>
-            <div style="font-family:'Rajdhani',sans-serif; font-size:24px;
-                        font-weight:700; color:{THEME['white']};">
-                {rival_info['rival']}
-            </div>
-            <div style="font-family:'Noto Sans JP',sans-serif; font-size:11px;
-                        color:{THEME['text_secondary']}; margin-top:4px;">
-                類似する課題：{', '.join(rival_info['weak_metrics'])}
-                （距離スコア：{rival_info['distance']}）
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-
-        comparison = compare_with_rival(
-            df, name_col, selected_player,
-            rival_info["rival"], selected_metrics
-        )
-
-        for comp in comparison:
-            c1, c2, c3, c4 = st.columns([2, 1, 1, 1])
-            with c1:
-                st.markdown(f"""
-                <div style="font-family:'Noto Sans JP',sans-serif; font-size:12px;
-                            color:{THEME['text_secondary']}; padding:6px 0;">{comp['指標']}</div>
-                """, unsafe_allow_html=True)
-            with c2:
-                st.markdown(f"""
-                <div style="font-family:'Rajdhani',sans-serif; font-size:14px;
-                            color:{THEME['accent']}; padding:6px 0;">{comp['自分']}</div>
-                """, unsafe_allow_html=True)
-            with c3:
-                st.markdown(f"""
-                <div style="font-family:'Rajdhani',sans-serif; font-size:14px;
-                            color:{THEME['rival']}; padding:6px 0;">{comp['ライバル']}</div>
-                """, unsafe_allow_html=True)
-            with c4:
-                st.markdown(f"""
-                <div style="font-family:'Rajdhani',sans-serif; font-size:14px;
-                            color:{THEME['text_primary']}; padding:6px 0;">{comp['差']}</div>
-                """, unsafe_allow_html=True)
-    else:
-        st.markdown("""
-        <div class="null-warning">比較対象となる選手が見つかりませんでした。</div>
-        """, unsafe_allow_html=True)
