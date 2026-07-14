@@ -1,122 +1,123 @@
 import pandas as pd
 import io
-
-NON_METRIC_COLS = ["選手名", "背番号", "氏名", "ID", "選手ID",
-                   "ポジション", "測定日", "student_id", "name",
-                   "Name", "StudentID", "id", "No", "NO", "番号",
-                   "性別", "gender", "Gender", "グループ", "group"]
+import re
+from modules.config import NON_METRIC_COLS
 
 CHUNK_SIZE = 500
 
 
-def _skip_unit_rows(df: pd.DataFrame) -> pd.DataFrame:
+def _clean_name(val) -> str:
     """
-    2行目以降に単位行（数値でない行）が混入している場合に除去する。
-    例：「（秒）」「（cm）」などの行をスキップ。
+    選手名の表記ゆれを自動クレンジングする。
+    全角・半角スペースの重複を除去し、前後トリム。
     """
-    numeric_cols = df.select_dtypes(include="number").columns.tolist()
-    if not numeric_cols:
-        return df
-
-    mask = df[numeric_cols].apply(
-        lambda row: row.notna().any(), axis=1
-    )
-    return df[mask].reset_index(drop=True)
+    if pd.isna(val):
+        return val
+    s = str(val)
+    s = re.sub(r'[\u3000\s]+', ' ', s)  # 全角スペース→半角、重複スペース→1つ
+    return s.strip()
 
 
-def _detect_unit_row(preview: pd.DataFrame) -> bool:
-    """
-    2行目が単位行かどうかを判定する。
-    
-    判定ロジック:
-    1. 全列のうち文字列値を持つ列の数をカウント
-    2. 半数以上の列が文字列（単位っぽい値）なら単位行とみなす
-    3. または、非数値列（ID・性別など除く）が1つでも文字列を含めば単位行とみなす
-    """
-    if len(preview) < 1:
+def _detect_unit_row(uploaded_file) -> bool:
+    """2行目が単位行（秒・cm等）かどうかを判定する"""
+    uploaded_file.seek(0)
+    preview = pd.read_excel(uploaded_file, engine="openpyxl",
+                            header=None, nrows=3)
+    uploaded_file.seek(0)
+
+    if len(preview) < 2:
         return False
 
-    row = preview.iloc[0]
+    second_row = preview.iloc[1].dropna()
+    if len(second_row) == 0:
+        return True
 
-    # 各セルの値を確認
-    str_count = 0
-    total_non_empty = 0
-    for val in row:
-        if val is None or (isinstance(val, float) and pd.isna(val)):
-            continue
-        total_non_empty += 1
-        if isinstance(val, str):
-            str_count += 1
+    numeric_count = 0
+    for val in second_row:
+        try:
+            float(str(val))
+            numeric_count += 1
+        except (ValueError, TypeError):
+            pass
 
-    if total_non_empty == 0:
-        return False
-
-    # 半数以上が文字列 → 単位行
-    return str_count / total_non_empty >= 0.5
+    return numeric_count == 0
 
 
 def load_excel(uploaded_file, chunk_size: int = CHUNK_SIZE) -> pd.DataFrame:
     """
-    大きいファイルをチャンク単位で分割読み込みし結合して返す。
-    xlsx・csv両対応。2行目の単位行を自動スキップ。
+    xlsx・csv両対応。
+    2行目の単位行を自動検出してスキップ。
+    全列を数値変換試行。
+    選手名の表記ゆれを自動クレンジング。
     """
     filename = uploaded_file.name.lower()
 
     if filename.endswith(".csv"):
-        chunks = []
+        uploaded_file.seek(0)
+        preview = pd.read_csv(uploaded_file, nrows=2,
+                              encoding="utf-8-sig", header=0)
+        uploaded_file.seek(0)
+
+        has_unit_row = False
+        if len(preview) >= 1:
+            second_row = preview.iloc[0].dropna()
+            numeric_count = 0
+            for val in second_row:
+                try:
+                    float(str(val))
+                    numeric_count += 1
+                except (ValueError, TypeError):
+                    pass
+            has_unit_row = numeric_count == 0
+
+        chunks   = []
+        skiprows = [1] if has_unit_row else None
         uploaded_file.seek(0)
         reader = pd.read_csv(
             uploaded_file,
             encoding="utf-8-sig",
-            chunksize=chunk_size
+            chunksize=chunk_size,
+            skiprows=skiprows
         )
         for chunk in reader:
             chunks.append(chunk)
         df = pd.concat(chunks, ignore_index=True)
 
     else:
-        # 先頭2行を確認して単位行があるか判定
+        has_unit_row = _detect_unit_row(uploaded_file)
+        skiprows     = [1] if has_unit_row else None
         uploaded_file.seek(0)
-        preview = pd.read_excel(uploaded_file, engine="openpyxl", nrows=1)
+        df = pd.read_excel(
+            uploaded_file,
+            engine="openpyxl",
+            skiprows=skiprows
+        )
 
-        has_unit_row = _detect_unit_row(preview)
-
-        uploaded_file.seek(0)
-        df_full    = pd.read_excel(uploaded_file, engine="openpyxl",
-                                   header=None)
-        total_rows = len(df_full) - 1
-        if has_unit_row:
-            total_rows -= 1  # 単位行分を引く
-
-        # チャンク読み込み
-        chunks = []
-        skip_extra = 2 if has_unit_row else 1  # ヘッダー行+単位行をスキップ
-
-        for skip in range(0, total_rows, chunk_size):
-            uploaded_file.seek(0)
-            chunk = pd.read_excel(
-                uploaded_file,
-                engine="openpyxl",
-                skiprows=range(1, skip + skip_extra),
-                nrows=chunk_size,
-                header=0
-            )
-            # 単位行が混入している場合に除去
-            if has_unit_row and len(chunk) > 0:
-                chunk = chunk.iloc[1:] if skip == 0 else chunk
-            chunks.append(chunk)
-
-        df = pd.concat(chunks, ignore_index=True)
-
-    # 完全に空の行を除去
     df = df.dropna(how="all").reset_index(drop=True)
 
+    # 数値変換
+    for col in df.columns:
+        if col in NON_METRIC_COLS:
+            continue
+        converted = pd.to_numeric(df[col], errors="coerce")
+        if converted.notna().sum() >= df[col].notna().sum() * 0.5:
+            df[col] = converted
+
+    # 選手ID・測定日の自動付与
     if "選手ID" not in df.columns and "student_id" not in df.columns:
         df.insert(0, "選手ID",
                   [f"P{str(i+1).zfill(3)}" for i in range(len(df))])
     if "測定日" not in df.columns:
         df["測定日"] = pd.Timestamp.today().strftime("%Y-%m-%d")
 
+    return df
+
+
+def clean_name_column(df: pd.DataFrame, name_col: str) -> pd.DataFrame:
+    """選手名列の表記ゆれをクレンジングする"""
+    if name_col in df.columns:
+        df = df.copy()
+        df[name_col] = df[name_col].apply(_clean_name)
     return df
 
 
@@ -151,13 +152,8 @@ def get_player_list(df: pd.DataFrame, name_col: str) -> list:
 
 def get_metric_columns(df: pd.DataFrame,
                        name_col: str = "選手名") -> list:
-    """
-    数値列のみ抽出。
-    NON_METRIC_COLSと選択されたname_colを除外。
-    """
     exclude = set(NON_METRIC_COLS) | {name_col}
-
-    result = []
+    result  = []
     for col in df.columns:
         if col in exclude:
             continue
@@ -165,16 +161,13 @@ def get_metric_columns(df: pd.DataFrame,
             continue
         if pd.api.types.is_numeric_dtype(df[col]):
             result.append(col)
-
     return result
 
 
 def clean_dataframe(df: pd.DataFrame,
                     metric_cols: list,
                     name_col: str = "選手名") -> tuple:
-    """
-    null値・外れ値（±3σ）を処理する。
-    """
+    """null値・外れ値（±3σ）を処理する"""
     df     = df.copy()
     report = {}
 

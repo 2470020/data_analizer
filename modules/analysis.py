@@ -1,25 +1,9 @@
 import pandas as pd
 import numpy as np
-
-LOW_IS_BETTER_KEYWORDS = ["走(秒)", "タイム", "秒", "run_", "_s"]
-
-UNIT_PATTERNS = {
-    "cm":  ["cm", "ｃｍ"],
-    "kg":  ["kg", "ｋｇ"],
-    "秒":  ["秒", "_s", "(s)", "（秒）"],
-    "m/s": ["m/s", "ｍ/ｓ"],
-    "回":  ["回"],
-    "点":  ["点", "スコア", "score"],
-}
-
-
-def _is_low_better(col_name: str) -> bool:
-    return any(kw.lower() in col_name.lower()
-               for kw in LOW_IS_BETTER_KEYWORDS)
+from modules.config import LOW_IS_BETTER_KEYWORDS, UNIT_PATTERNS, is_low_better
 
 
 def calc_team_stats(df: pd.DataFrame, metric_cols: list) -> pd.DataFrame:
-    """null値を除いてチーム統計を計算"""
     stats         = df[metric_cols].agg(["mean", "std"]).T
     stats.columns = ["チーム平均", "標準偏差"]
     return stats
@@ -32,7 +16,7 @@ def calc_z_scores(df: pd.DataFrame, metric_cols: list) -> pd.DataFrame:
         std  = df[col].std(skipna=True)
         if std > 0:
             z_df[col] = (df[col] - mean) / std
-            if _is_low_better(col):
+            if is_low_better(col):
                 z_df[col] = -z_df[col]
         else:
             z_df[col] = 0.0
@@ -41,13 +25,15 @@ def calc_z_scores(df: pd.DataFrame, metric_cols: list) -> pd.DataFrame:
 
 def get_player_data(df: pd.DataFrame, player_name: str,
                     name_col: str) -> pd.Series:
-    return df[df[name_col].astype(str) == str(player_name)].iloc[0]
+    match = df[df[name_col].astype(str) == str(player_name)]
+    if match.empty:
+        return None
+    return match.iloc[0]
 
 
 def normalize_for_radar(player_data: pd.Series,
                         team_stats: pd.DataFrame,
                         metric_cols: list) -> tuple:
-    """null値の項目は50（平均）として扱う"""
     player_norm = []
     team_norm   = []
 
@@ -60,7 +46,7 @@ def normalize_for_radar(player_data: pd.Series,
             player_norm.append(50)
         else:
             p_z = (float(val) - float(mean)) / float(std)
-            if _is_low_better(col):
+            if is_low_better(col):
                 p_z = -p_z
             player_norm.append(min(max(p_z * 25 + 50, 0), 100))
 
@@ -70,10 +56,6 @@ def normalize_for_radar(player_data: pd.Series,
 
 
 def extract_unit(col_name: str) -> str:
-    """
-    列名から単位を推定して返す。
-    一致しなければ「その他」を返す。
-    """
     col_lower = col_name.lower()
     for unit, patterns in UNIT_PATTERNS.items():
         for pat in patterns:
@@ -83,10 +65,6 @@ def extract_unit(col_name: str) -> str:
 
 
 def group_metrics_by_unit(metric_cols: list) -> dict:
-    """
-    測定項目を単位ごとにグループ分けする。
-    返り値：{"cm": ["ジャンプ高(cm)", ...], "秒": [...], ...}
-    """
     groups = {}
     for col in metric_cols:
         unit = extract_unit(col)
