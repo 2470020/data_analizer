@@ -79,6 +79,7 @@ def generate_player_pdf(player_name: str,
 
     # ── タイトル ──
     story.append(Paragraph(f"ATHLETE REPORT", title_style))
+    story.append(Spacer(1, 6))
     story.append(Paragraph(f"選手名：{player_name}", sub_style))
     story.append(Paragraph(f"測定日：{daily_training.get('date', '-')}",
                            sub_style))
