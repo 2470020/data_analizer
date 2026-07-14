@@ -10,7 +10,7 @@ from modules.data_loader import (load_excel, get_column_names,
                                   clean_dataframe, clean_name_column)
 from modules.analysis import (calc_team_stats, get_player_data,
                                normalize_for_radar, group_metrics_by_unit,
-                               calc_z_scores)
+                               calc_z_scores, get_radar_data)
 from modules.advisor import generate_advice
 from modules.training_generator import (generate_daily_training,
                                           generate_weekly_plan)
@@ -731,25 +731,63 @@ with tab_result:
                     """, unsafe_allow_html=True)
                     continue
 
-                group_player_norm, group_team_norm = normalize_for_radar(
-                    player_data, team_stats, cols_in_group)
+                # ── パーセンタイル正規化 + ホバー詳細 + 欠測マーカー ──
+                group_radar = get_radar_data(
+                    player_data, team_stats, df, cols_in_group)
 
-                categories = cols_in_group + [cols_in_group[0]]
-                p_vals     = group_player_norm + [group_player_norm[0]]
-                t_vals     = group_team_norm   + [group_team_norm[0]]
+                def _close(lst):
+                    return lst + [lst[0]]
+
+                categories = _close(group_radar["categories"])
+                p_vals     = _close(group_radar["player_norm"])
+                t_vals     = _close(group_radar["team_norm"])
+
+                idx_closed = list(range(len(group_radar["categories"]))) + [0]
+
+                def _hover_text(i_list, radar):
+                    texts = []
+                    for i in i_list:
+                        col     = radar["categories"][i]
+                        raw     = radar["player_raw"][i]
+                        unit_s  = radar["units"][i]
+                        pct     = radar["percentile"][i]
+                        missing = radar["is_missing"][i]
+                        if missing:
+                            texts.append(f"{col}<br>選手値: データなし（欠測/外れ値として除外）")
+                        else:
+                            u = "" if unit_s == "その他" else unit_s
+                            texts.append(
+                                f"{col}<br>選手値: {raw}{u}<br>"
+                                f"チーム平均: {round(float(team_stats.loc[col,'チーム平均']),2)}{u}<br>"
+                                f"チーム内順位: 上位{round(100-pct,1)}%（パーセンタイル {pct}）"
+                            )
+                    return texts
+
+                hover_player = _hover_text(idx_closed, group_radar)
+
+                marker_colors  = [THEME['warn'] if group_radar["is_missing"][i] else THEME['accent']
+                                  for i in idx_closed]
+                marker_symbols = ["x" if group_radar["is_missing"][i] else "circle"
+                                  for i in idx_closed]
 
                 group_fig = go.Figure()
                 group_fig.add_trace(go.Scatterpolar(
                     r=t_vals, theta=categories, fill="toself",
                     name="TEAM AVG",
-                    line=dict(color=THEME['border_strong'], width=1),
-                    fillcolor=THEME['accent_soft']
+                    line=dict(color=THEME['border_strong'], width=1, dash="dot"),
+                    fillcolor=THEME['accent_soft'],
+                    hoverinfo="skip"
                 ))
                 group_fig.add_trace(go.Scatterpolar(
                     r=p_vals, theta=categories, fill="toself",
                     name=str(selected_player).upper(),
                     line=dict(color=THEME['accent'], width=2),
-                    fillcolor=THEME['accent_soft']
+                    fillcolor=THEME['accent_soft'],
+                    mode="lines+markers",
+                    marker=dict(size=6, color=marker_colors, symbol=marker_symbols,
+                                line=dict(color=THEME['bg'], width=1)),
+                    text=hover_player,
+                    hovertemplate="%{text}<extra></extra>"
                 ))
                 group_fig.update_layout(
                     polar=dict(
@@ -758,7 +796,8 @@ with tab_result:
                             visible=True, range=[0, 100],
                             gridcolor=THEME['border'], linecolor=THEME['border'],
                             tickfont=dict(color=THEME['text_faint'], size=8),
-                            tickvals=[25, 50, 75, 100]
+                            tickvals=[10, 25, 50, 75, 90],
+                            ticktext=["10%ile", "25%ile", "50%ile", "75%ile", "90%ile"]
                         ),
                         angularaxis=dict(
                             gridcolor=THEME['border'], linecolor=THEME['border'],
@@ -775,6 +814,20 @@ with tab_result:
                     margin=dict(t=20, b=20, l=20, r=20)
                 )
                 st.plotly_chart(group_fig, use_container_width=True)
+
+                if any(group_radar["is_missing"]):
+                    missing_cols = [c for c, m in zip(group_radar["categories"], group_radar["is_missing"]) if m]
+                    st.markdown(f"""
+                    <div class="null-warning">
+                        <span style="color:{THEME['warn']};">✕</span> 欠測/外れ値：{'、'.join(missing_cols)}
+                    </div>""", unsafe_allow_html=True)
+
+    st.markdown(f"""
+    <div style="font-family:'Noto Sans JP',sans-serif; font-size:11px;
+                color:{THEME['text_muted']}; margin:-4px 0 12px;">
+        ※ 各軸はチーム内でのパーセンタイル順位（0-100）です。平均・標準偏差ではなく
+        相対順位に基づくため、外れ値や分布の歪みの影響を受けにくくなっています。
+    </div>""", unsafe_allow_html=True)
 
     # ── 分析報告書（選択状態キープ） ────────────────
     st.markdown('<div class="section-header">分析報告書</div>',
