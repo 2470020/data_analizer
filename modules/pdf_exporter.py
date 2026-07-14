@@ -12,11 +12,15 @@ from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer,
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 import os
+from pathlib import Path
 
 
 def _register_font():
     """日本語フォントを登録する（環境によってパスを変更）"""
+    repo_root = Path(__file__).resolve().parent.parent
     font_paths = [
+        # fontの同梱
+        str(repo_root / "assets" / "fonts" / "NotoSansJP-Regular.ttf"),
         "C:/Windows/Fonts/msgothic.ttc",
         "C:/Windows/Fonts/meiryo.ttc",
         "/usr/share/fonts/truetype/fonts-japanese-gothic.ttf",
